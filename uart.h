@@ -42,4 +42,6 @@ private:
     int fd;
     bool custom_tty = false;
     termios old_tios;
+
+    int timeout_tick_count = 0;
 };

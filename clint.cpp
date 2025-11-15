@@ -4,7 +4,7 @@
 #define MTIMECMP_BASE 0x4000
 #define MTIME_BASE    0xbff8
 
-#define MTIME_FREQ 32768
+#define MTIME_FREQ 100000.0
 
 clint::clint(std::vector<hart*> harts, u32 tick_freq)
 {
@@ -196,7 +196,7 @@ u32 clint::size() const
 void clint::tick()
 {
     tick_counter++;
-    if (tick_counter == tick_freq / MTIME_FREQ) {
+    if (tick_counter >= tick_freq / MTIME_FREQ) {
         tick_counter = 0;
         mtime++;
         for (u32 i = 0; i < harts.size(); i++) {

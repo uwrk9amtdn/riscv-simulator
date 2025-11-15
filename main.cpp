@@ -200,6 +200,5 @@ int main(int argc, char** argv)
     while (1) {
         hart0.step();
         mmio0.tick();
-        // getchar();
     }
 }

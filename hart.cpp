@@ -1,7 +1,5 @@
 #include "hart.h"
 #include "constants.h"
-#include <stdio.h>
-#include <stdlib.h>
 
 struct trap {
     u32 cause;
@@ -36,11 +34,11 @@ void hart::op_jal()
 {
     u32 target_pc;
     imm = sign_extend(get_part(inst, 31, 31, 20) | get_part(inst, 19, 12, 12) | get_part(inst, 20, 20, 11) | get_part(inst, 30, 21, 1), 20);
-    regs[rd] = pc + 4;
     target_pc = pc + imm;
     if (target_pc & 0x3) {
         throw trap{MCAUSE_INSTRUCTION_ADDRESS_MISALIGNED_EXCEPTION, target_pc};
     } else {
+        regs[rd] = pc + 4;
         pc = target_pc;
     }
 }
@@ -51,10 +49,10 @@ void hart::op_jalr()
 
     imm = get_part_s(inst, 31, 20);
     target_pc = (regs[rs1] + imm) & (~1);
-    regs[rd] = pc + 4;
     if (target_pc & 0x3) {
         throw trap{MCAUSE_INSTRUCTION_ADDRESS_MISALIGNED_EXCEPTION, target_pc};
     } else {
+        regs[rd] = pc + 4;
         pc = target_pc;
     }
 }
@@ -471,7 +469,8 @@ void hart::op_amo()
 
     bool b;
     u32 addr;
-    u32 data;
+    u32 ldata;
+    u32 sdata;
 
     if (funct3 != FUNCT3_AMO) {
         throw trap{MCAUSE_ILLEGAL_INSTRUCTION_EXCEPTION, inst};
@@ -489,13 +488,12 @@ void hart::op_amo()
             throw trap{MCAUSE_LOAD_ADDRESS_MISALIGNED_EXCEPTION, addr};
         }
 
-        b = mmio_->load(addr, 4, (u8*)&data);
-
+        b = mmio_->load(addr, 4, (u8*)&ldata);
         if (!b) {
             throw trap{MCAUSE_LOAD_ACCESS_FAULT_EXCEPTION, addr};
         }
 
-        regs[rd] = data;
+        regs[rd] = ldata;
 
         reservation_set = true;
         reserved_addr = addr;
@@ -504,15 +502,14 @@ void hart::op_amo()
     case FUNCT5_SC_W:
 
         addr = regs[rs1];
-        data = regs[rs2];
+        sdata = regs[rs2];
 
         if (addr & 0x03) {
             throw trap{MCAUSE_STORE_AMO_ADDRESS_MISALIGNED_EXCEPTION, addr};
         }
 
         if (reservation_set && reserved_addr == addr) {
-            b = mmio_->store(addr, 4, (u8*)&data);
-
+            b = mmio_->store(addr, 4, (u8*)&sdata);
             if (!b) {
                 throw trap{MCAUSE_STORE_AMO_ACCESS_FAULT_EXCEPTION, addr};
             }
@@ -538,34 +535,32 @@ void hart::op_amo()
             throw trap{MCAUSE_STORE_AMO_ADDRESS_MISALIGNED_EXCEPTION, addr};
         }
 
-        b = mmio_->load(addr, 4, (u8*)&data);
-
+        b = mmio_->load(addr, 4, (u8*)&ldata);
         if (!b) {
             throw trap{MCAUSE_LOAD_ACCESS_FAULT_EXCEPTION, addr};
         }
 
-        regs[rd] = data;
-
         // clang-format off
         switch (funct5) {
-        case FUNCT5_AMOSWAP_W: data = regs[rs2];                                       break;
-        case FUNCT5_AMOADD_W:  data = data + regs[rs2];                                break;
-        case FUNCT5_AMOXOR_W:  data = data ^ regs[rs2];                                break;
-        case FUNCT5_AMOAND_W:  data = data & regs[rs2];                                break;
-        case FUNCT5_AMOOR_W:   data = data | regs[rs2];                                break;
-        case FUNCT5_AMOMIN_W:  data = ((i32)data > (i32)regs[rs2]) ? regs[rs2] : data; break;
-        case FUNCT5_AMOMAX_W:  data = ((i32)data > (i32)regs[rs2]) ? data : regs[rs2]; break;
-        case FUNCT5_AMOMINU_W: data = (data > regs[rs2]) ? regs[rs2] : data;           break;
-        case FUNCT5_AMOMAXU_W: data = (data > regs[rs2]) ? data : regs[rs2];           break;
+        case FUNCT5_AMOSWAP_W: sdata = regs[rs2];                                         break;
+        case FUNCT5_AMOADD_W:  sdata = ldata + regs[rs2];                                 break;
+        case FUNCT5_AMOXOR_W:  sdata = ldata ^ regs[rs2];                                 break;
+        case FUNCT5_AMOAND_W:  sdata = ldata & regs[rs2];                                 break;
+        case FUNCT5_AMOOR_W:   sdata = ldata | regs[rs2];                                 break;
+        case FUNCT5_AMOMIN_W:  sdata = ((i32)ldata > (i32)regs[rs2]) ? regs[rs2] : ldata; break;
+        case FUNCT5_AMOMAX_W:  sdata = ((i32)ldata > (i32)regs[rs2]) ? ldata : regs[rs2]; break;
+        case FUNCT5_AMOMINU_W: sdata = (ldata > regs[rs2]) ? regs[rs2] : ldata;           break;
+        case FUNCT5_AMOMAXU_W: sdata = (ldata > regs[rs2]) ? ldata : regs[rs2];           break;
         default: break;
         }
         // clang-format on
 
-        b = mmio_->store(addr, 4, (u8*)&data);
-
+        b = mmio_->store(addr, 4, (u8*)&sdata);
         if (!b) {
             throw trap{MCAUSE_STORE_AMO_ACCESS_FAULT_EXCEPTION, addr};
         }
+
+        regs[rd] = ldata;
 
         break;
     default:
@@ -605,45 +600,6 @@ void hart::step()
         funct3 = get_part(inst, 14, 12);
         funct7 = get_part(inst, 31, 25);
 
-        // printf(
-        //     "pc = %08x, "
-        //     "inst = %08x, "
-        //     "x0 = %08x, "
-        //     "x1 = %08x, "
-        //     "x2 = %08x, "
-        //     "x3 = %08x, "
-        //     "x4 = %08x, "
-        //     "x5 = %08x, "
-        //     "x6 = %08x, "
-        //     "x7 = %08x, "
-        //     "x8 = %08x, "
-        //     "x9 = %08x, "
-        //     "x10 = %08x, "
-        //     "x11 = %08x, "
-        //     "x12 = %08x, "
-        //     "x13 = %08x, "
-        //     "x14 = %08x, "
-        //     "x15 = %08x\n",
-        //     pc,
-        //     inst,
-        //     regs[0],
-        //     regs[1],
-        //     regs[2],
-        //     regs[3],
-        //     regs[4],
-        //     regs[5],
-        //     regs[6],
-        //     regs[7],
-        //     regs[8],
-        //     regs[9],
-        //     regs[10],
-        //     regs[11],
-        //     regs[12],
-        //     regs[13],
-        //     regs[14],
-        //     regs[15]
-        // );
-
         // clang-format off
         switch (opcode) {
         case OP_LUI:      op_lui();      break;
@@ -667,8 +623,6 @@ void hart::step()
     } catch (trap t) {
         mcause = t.cause;
         mtval = t.tval;
-
-        printf("interrupt: cause = %08x, tval = %08x, pc = %08x\n", mcause, mtval, pc);
 
         if (mstatus & (1 << 3)) {
             mstatus = set_bit(mstatus, 7);
@@ -857,13 +811,6 @@ bool hart::csr_rw(u32 csr, u32 read_mask, u32 write_mask, u32& read_data, u32 wr
     case CSR_MIP:
         read_data = mip & read_mask;
         r = true;
-        if (write_mask & (1 << 3)) {
-            if (write_data & (1 << 3)) {
-                set_msip(1);
-            } else {
-                set_msip(0);
-            }
-        }
         break;
 
     default:

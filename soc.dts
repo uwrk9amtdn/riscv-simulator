@@ -22,7 +22,11 @@
             reg = <0>;
             status = "okay";
             compatible = "riscv";
-            riscv,isa = "rv32i";
+            // riscv,isa = "rv32i";
+            riscv,isa-extensions = "i", "m", "a", "zicsr", "zifencei";
+			riscv,isa-base = "rv32i";
+			riscv,isa = "rv32ima_zicsr_zifencei";
+
             mmu-type = "riscv,none";
 
             CPU0_intc: interrupt-controller {

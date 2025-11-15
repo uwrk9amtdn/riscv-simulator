@@ -118,6 +118,7 @@ bool uart::load(u32 addr, u32 len, u8* data)
             val = dll;
         } else {
             update = true;
+            timeout_tick_count = 0;
             if (fcr & UART_FCR_ENABLE_FIFO) {
                 if (rx_queue.empty()) {
                     val = 0;
@@ -301,37 +302,34 @@ void uart::tick()
     int ret;
     u8 ch;
 
+    if (timeout_tick_count < 100 && rx_queue.size() > 0) {
+        timeout_tick_count += 1;
+    }
+
     if (mcr & UART_MCR_LOOP) {
-        return;
-    }
-
-    pfd.fd = fd;
-    pfd.events = POLLIN;
-
-    ret = poll(&pfd, 1, 0);
-    if (ret <= 0 || !(pfd.revents & POLLIN)) {
-        return;
-    }
-
-    ret = ::read(fd, &ch, 1);
-    if (ret <= 0) {
-        return;
-    }
-
-    if (fcr & UART_FCR_ENABLE_FIFO) {
-        if (rx_queue.size() < UART_QUEUE_SIZE) {
-            rx_queue.push(ch);
-        } else {
-            lsr |= UART_LSR_OE;
-        }
     } else {
-        rbr = ch;
-        if (lsr & UART_LSR_DR) {
-            lsr |= UART_LSR_OE;
+        pfd.fd = fd;
+        pfd.events = POLLIN;
+        ret = poll(&pfd, 1, 0);
+        if (ret > 0 && pfd.events & POLLIN) {
+            ret = ::read(fd, &ch, 1);
+            if (ret > 0) {
+                if (fcr & UART_FCR_ENABLE_FIFO) {
+                    if (rx_queue.size() < UART_QUEUE_SIZE) {
+                        rx_queue.push(ch);
+                    } else {
+                        lsr |= UART_LSR_OE;
+                    }
+                } else {
+                    rbr = ch;
+                    if (lsr & UART_LSR_DR) {
+                        lsr |= UART_LSR_OE;
+                    }
+                }
+                lsr |= UART_LSR_DR;
+            }
         }
     }
-
-    lsr |= UART_LSR_DR;
 
     update_interrupt();
 }
@@ -365,7 +363,7 @@ void uart::update_interrupt()
                 l = 14;
                 break;
             }
-            if (rx_queue.size() >= l) {
+            if (rx_queue.size() >= l || timeout_tick_count == 100) {
                 trigger = true;
             }
         } else {

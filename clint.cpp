@@ -1,15 +1,18 @@
 #include "clint.h"
+#include <stdexcept>
 
 #define MSIP_BASE     0x0000
 #define MTIMECMP_BASE 0x4000
 #define MTIME_BASE    0xbff8
 
-#define MTIME_FREQ 100000.0
+#define MTIME_FREQ 10000000.0
 
-clint::clint(std::vector<hart*> harts, u32 tick_freq)
+clint::clint(std::vector<hart*> harts, float tick_freq)
 {
     this->harts = harts;
     this->tick_freq = tick_freq;
+
+    if (MTIME_FREQ < tick_freq) throw std::runtime_error("tick_freq can not be smaller than MTIME_FREQ");
 
     mtime = 0;
     msip.resize(harts.size(), 0);
@@ -18,6 +21,8 @@ clint::clint(std::vector<hart*> harts, u32 tick_freq)
 
 bool clint::load(u32 addr, u32 len, u8* data)
 {
+    std::lock_guard lock(m);
+
     u32 val32;
     u64 val64;
     u64 d;
@@ -99,6 +104,8 @@ bool clint::load(u32 addr, u32 len, u8* data)
 
 bool clint::store(u32 addr, u32 len, const u8* data)
 {
+    std::lock_guard lock(m);
+
     u32 val32;
     u64 val64;
 
@@ -195,16 +202,14 @@ u32 clint::size() const
 
 void clint::tick()
 {
-    tick_counter++;
-    if (tick_counter >= tick_freq / MTIME_FREQ) {
-        tick_counter = 0;
-        mtime++;
-        for (u32 i = 0; i < harts.size(); i++) {
-            if (mtimecmp[i] <= mtime) {
-                harts[i]->set_mtip(1);
-            } else {
-                harts[i]->set_mtip(0);
-            }
+    std::lock_guard lock(m);
+
+    mtime += MTIME_FREQ / tick_freq;
+    for (u32 i = 0; i < harts.size(); i++) {
+        if (mtimecmp[i] <= mtime) {
+            harts[i]->set_mtip(1);
+        } else {
+            harts[i]->set_mtip(0);
         }
     }
 }

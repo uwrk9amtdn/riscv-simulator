@@ -7,6 +7,8 @@
 #include <queue>
 #include <termios.h>
 
+#include <mutex>
+
 class uart : public mmio_device {
 
 public:
@@ -44,4 +46,8 @@ private:
     termios old_tios;
 
     int timeout_tick_count = 0;
+
+    bool interrupt_pre = false;
+
+    std::mutex m;
 };

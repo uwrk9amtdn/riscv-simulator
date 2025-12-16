@@ -15,6 +15,9 @@
 #include <getopt.h>
 #include <libfdt.h>
 
+#include <chrono>
+#include <thread>
+
 std::vector<u8> load_file(std::string file)
 {
     u32 size;
@@ -89,14 +92,8 @@ void patch_fdt(std::vector<u8>& fdt, u32 initrd_start, u32 initrd_end, std::stri
     fdt.resize(fdt_totalsize(fdt_data));
 }
 
-int main(int argc, char** argv)
+void parse_cmdline(int argc, char* const* argv, const char** kernel, const char** initrd, const char** dtb, const char** append)
 {
-
-    const char* kernel = 0;
-    const char* initrd = 0;
-    const char* dtb = 0;
-    const char* append = 0;
-
     static struct option long_options[] = {
         {"kernel", required_argument, 0, 0},
         {"initrd", required_argument, 0, 1},
@@ -111,21 +108,35 @@ int main(int argc, char** argv)
     while ((opt = getopt_long(argc, argv, "", long_options, &opt_index)) != -1) {
         switch (opt) {
         case 0:
-            kernel = optarg;
+            *kernel = optarg;
             break;
         case 1:
-            initrd = optarg;
+            *initrd = optarg;
             break;
         case 2:
-            dtb = optarg;
+            *dtb = optarg;
             break;
         case 3:
-            append = optarg;
+            *append = optarg;
             break;
+        case '?':
+            printf("unknown option: %s", argv[optind - 1]);
         default:
-            return 1;
+            printf("unknown option: %c", optopt);
         }
     }
+}
+
+int main(int argc, char** argv)
+{
+    const char* kernel = 0;
+    const char* initrd = 0;
+    const char* dtb = 0;
+    const char* append = 0;
+
+    parse_cmdline(argc, argv, &kernel, &initrd, &dtb, &append);
+
+    float mmio_tick_rate = 10000;
 
     mmio mmio0(4);
     hart hart0(&mmio0, 0, 0x80000000);
@@ -135,7 +146,7 @@ int main(int argc, char** argv)
     machine_context hart0_machine_context(&hart0);
     plic plic0({&hart0_machine_context}, 1);
 
-    clint clint0({&hart0}, 10000000);
+    clint clint0({&hart0}, mmio_tick_rate);
 
     uart uart0(0, &plic0, 1);
 
@@ -197,8 +208,24 @@ int main(int argc, char** argv)
     hart0.regs[11] = dtb_start;
     hart0.pc = kernel_start;
 
+    bool stop_t = false;
+    auto t = [&]() {
+        using namespace std::chrono;
+        auto interval = microseconds(int(1000000.0 / mmio_tick_rate));
+        auto t = high_resolution_clock::now();
+        while (!stop_t) {
+            t += interval;
+            mmio0.tick();
+            std::this_thread::sleep_until(t);
+        }
+    };
+
+    std::thread mmio_tick_thread(t);
+
     while (1) {
         hart0.step();
-        mmio0.tick();
     }
+
+    stop_t = true;
+    mmio_tick_thread.join();
 }

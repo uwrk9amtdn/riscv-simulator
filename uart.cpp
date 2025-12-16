@@ -105,6 +105,8 @@ uart::~uart()
 
 bool uart::load(u32 addr, u32 len, u8* data)
 {
+    std::lock_guard lock(m);
+
     u8 val;
     bool update = false;
 
@@ -188,6 +190,7 @@ bool uart::load(u32 addr, u32 len, u8* data)
 
 bool uart::store(u32 addr, u32 len, const u8* data)
 {
+    std::lock_guard lock(m);
 
     u8 val;
     bool update = false;
@@ -298,6 +301,8 @@ u32 uart::size() const
 
 void uart::tick()
 {
+    std::lock_guard lock(m);
+
     struct pollfd pfd;
     int ret;
     u8 ch;
@@ -385,5 +390,9 @@ void uart::update_interrupt()
 _end:
 
     bool i = (iir & 0x01) ? false : true;
-    plic_->set_interrupt_signal(interrupt_id, i);
+
+    if (interrupt_pre != i) {
+        plic_->set_interrupt_signal(interrupt_id, i);
+        interrupt_pre = i;
+    }
 }

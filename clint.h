@@ -4,10 +4,11 @@
 #include "mmio_device.h"
 #include "hart.h"
 #include <vector>
+#include <mutex>
 
 class clint : public mmio_device {
 public:
-    clint(std::vector<hart*> harts, u32 tick_freq = 1000000);
+    clint(std::vector<hart*> harts, float tick_freq = 1000000);
 
     bool load(u32 addr, u32 len, u8* data) override;
     bool store(u32 addr, u32 len, const u8* data) override;
@@ -23,6 +24,7 @@ private:
 
     std::vector<hart*> harts;
 
-    u32 tick_freq;
-    u64 tick_counter = 0;
+    float tick_freq;
+
+    std::mutex m;
 };

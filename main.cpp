@@ -18,6 +18,8 @@
 #include <chrono>
 #include <thread>
 
+// TODO: disable ctrl+c
+
 std::vector<u8> load_file(std::string file)
 {
     u32 size;

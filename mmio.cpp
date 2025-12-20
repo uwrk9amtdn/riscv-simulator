@@ -13,6 +13,10 @@ void mmio::add_device(mmio_device* dev, u32 slot)
         throw std::runtime_error("mmio: invalid slot");
     }
 
+    if (dev->size() > (1 << (32 - slot_bits))) {
+        throw std::runtime_error("mmio: device size exceeds slot size");
+    }
+
     devices[slot] = dev;
 }
 

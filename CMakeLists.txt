@@ -16,6 +16,8 @@ add_executable(rvsim
     uart.cpp
 )
 
+target_compile_features(rvsim PRIVATE cxx_std_17)
+
 add_custom_command(
     OUTPUT soc.dtb
     COMMAND dtc ARGS -o soc.dtb ${CMAKE_CURRENT_SOURCE_DIR}/soc.dts

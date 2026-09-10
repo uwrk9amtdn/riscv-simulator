@@ -1,5 +1,4 @@
 #include "hart.h"
-#include "constants.h"
 
 struct trap {
     u32 cause;
@@ -96,7 +95,6 @@ void hart::op_branch()
 void hart::op_load()
 {
     u32 addr;
-    bool b;
     u32 data;
     i8 di8;
     i16 di16;
@@ -107,22 +105,22 @@ void hart::op_load()
 
     switch (funct3) {
     case FUNCT3_LB:
-        b = mmio_->load(addr, 1, (u8*)&di8);
+        load(addr, 1, (u8*)&di8);
         data = di8;
         break;
     case FUNCT3_LH:
-        b = mmio_->load(addr, 2, (u8*)&di16);
+        load(addr, 2, (u8*)&di16);
         data = di16;
         break;
     case FUNCT3_LW:
-        b = mmio_->load(addr, 4, (u8*)&data);
+        load(addr, 4, (u8*)&data);
         break;
     case FUNCT3_LBU:
-        b = mmio_->load(addr, 1, (u8*)&du8);
+        load(addr, 1, (u8*)&du8);
         data = du8;
         break;
     case FUNCT3_LHU:
-        b = mmio_->load(addr, 2, (u8*)&du16);
+        load(addr, 2, (u8*)&du16);
         data = du16;
         break;
     default:
@@ -130,18 +128,13 @@ void hart::op_load()
         break;
     }
 
-    if (!b) {
-        throw trap{MCAUSE_LOAD_ACCESS_FAULT_EXCEPTION, addr};
-    } else {
         regs[rd] = data;
         pc = pc + 4;
     }
-}
 
 void hart::op_store()
 {
     u32 addr;
-    bool b;
     u32 data;
 
     addr = regs[rs1] + get_part_s(inst, 31, 25, 5) + get_part(inst, 11, 7);
@@ -149,27 +142,23 @@ void hart::op_store()
     switch (funct3) {
     case FUNCT3_SB:
         data = regs[rs2];
-        b = mmio_->store(addr, 1, (u8*)&data);
+        store(addr, 1, (u8*)&data);
         break;
     case FUNCT3_SH:
         data = regs[rs2];
-        b = mmio_->store(addr, 2, (u8*)&data);
+        store(addr, 2, (u8*)&data);
         break;
     case FUNCT3_SW:
         data = regs[rs2];
-        b = mmio_->store(addr, 4, (u8*)&data);
+        store(addr, 4, (u8*)&data);
         break;
     default:
         throw trap{MCAUSE_ILLEGAL_INSTRUCTION_EXCEPTION, inst};
         break;
     }
 
-    if (!b) {
-        throw trap{MCAUSE_STORE_AMO_ACCESS_FAULT_EXCEPTION, addr};
-    } else {
         pc = pc + 4;
     }
-}
 
 void hart::op_imm()
 {
@@ -467,7 +456,6 @@ void hart::op_amo()
     // u32 aq = get_part(inst, 26, 26);
     // u32 rl = get_part(inst, 25, 25);
 
-    bool b;
     u32 addr;
     u32 ldata;
     u32 sdata;
@@ -488,10 +476,7 @@ void hart::op_amo()
             throw trap{MCAUSE_LOAD_ADDRESS_MISALIGNED_EXCEPTION, addr};
         }
 
-        b = mmio_->load(addr, 4, (u8*)&ldata);
-        if (!b) {
-            throw trap{MCAUSE_LOAD_ACCESS_FAULT_EXCEPTION, addr};
-        }
+       load(addr, 4, (u8*)&ldata);
 
         regs[rd] = ldata;
 
@@ -509,10 +494,8 @@ void hart::op_amo()
         }
 
         if (reservation_set && reserved_addr == addr) {
-            b = mmio_->store(addr, 4, (u8*)&sdata);
-            if (!b) {
-                throw trap{MCAUSE_STORE_AMO_ACCESS_FAULT_EXCEPTION, addr};
-            }
+            store(addr, 4, (u8*)&sdata);
+
             regs[rd] = 0;
             reservation_set = false;
         } else {
@@ -535,10 +518,7 @@ void hart::op_amo()
             throw trap{MCAUSE_STORE_AMO_ADDRESS_MISALIGNED_EXCEPTION, addr};
         }
 
-        b = mmio_->load(addr, 4, (u8*)&ldata);
-        if (!b) {
-            throw trap{MCAUSE_LOAD_ACCESS_FAULT_EXCEPTION, addr};
-        }
+        load(addr, 4, (u8*)&ldata);
 
         // clang-format off
         switch (funct5) {
@@ -555,10 +535,7 @@ void hart::op_amo()
         }
         // clang-format on
 
-        b = mmio_->store(addr, 4, (u8*)&sdata);
-        if (!b) {
-            throw trap{MCAUSE_STORE_AMO_ACCESS_FAULT_EXCEPTION, addr};
-        }
+        store(addr, 4, (u8*)&sdata);
 
         regs[rd] = ldata;
 
@@ -587,11 +564,7 @@ void hart::step()
             }
         }
 
-        b = mmio_->load(pc, 4, (u8*)&inst);
-
-        if (!b) {
-            throw trap{MCAUSE_INSTRUCTION_ACCESS_FAULT_EXCEPTION, pc};
-        }
+        load(pc, 4, (u8*)&inst, MCAUSE_INSTRUCTION_ACCESS_FAULT_EXCEPTION);
 
         opcode = get_part(inst, 6, 0);
         rs1 = get_part(inst, 19, 15);
@@ -819,4 +792,11 @@ bool hart::csr_rw(u32 csr, u32 read_mask, u32 write_mask, u32& read_data, u32 wr
     }
 
     return r;
+}
+void hart::load(u32 addr, u32 len, u8* data, u32 exc) {
+    if (!mmio_->load(addr, len, data)) throw trap{exc, addr};
+}
+
+void hart::store(u32 addr, u32 len, const u8* data, u32 exc) {
+    if (!mmio_->store(addr, len, data)) throw trap{exc, addr};
 }

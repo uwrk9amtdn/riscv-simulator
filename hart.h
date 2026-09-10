@@ -2,6 +2,7 @@
 
 #include "common.h"
 #include "mmio.h"
+#include "constants.h"
 
 class hart {
 
@@ -49,6 +50,8 @@ private:
     u32 reserved_addr = 0;
 
     bool csr_rw(u32 csr, u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void load(u32 addr, u32 len, u8* data, u32 exc = MCAUSE_LOAD_ACCESS_FAULT_EXCEPTION);
+    void store(u32 addr, u32 len, const u8* data, u32 exc = MCAUSE_STORE_AMO_ACCESS_FAULT_EXCEPTION);
 
     ////
 

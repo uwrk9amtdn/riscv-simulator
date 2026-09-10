@@ -476,7 +476,7 @@ void hart::op_amo()
             throw trap{MCAUSE_LOAD_ADDRESS_MISALIGNED_EXCEPTION, addr};
         }
 
-       load(addr, 4, (u8*)&ldata);
+       load(addr, 4, (u8*)&ldata, MCAUSE_STORE_AMO_ACCESS_FAULT_EXCEPTION);
 
         regs[rd] = ldata;
 
@@ -518,7 +518,7 @@ void hart::op_amo()
             throw trap{MCAUSE_STORE_AMO_ADDRESS_MISALIGNED_EXCEPTION, addr};
         }
 
-        load(addr, 4, (u8*)&ldata);
+        load(addr, 4, (u8*)&ldata, MCAUSE_STORE_AMO_ACCESS_FAULT_EXCEPTION);
 
         // clang-format off
         switch (funct5) {
@@ -550,8 +550,6 @@ void hart::op_amo()
 
 void hart::step()
 {
-    bool b;
-
     try {
 
         if ((mstatus & 0x8)) { // MIE is set

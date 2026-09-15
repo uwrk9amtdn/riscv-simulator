@@ -1,0 +1,258 @@
+diff --git a/CMakeLists.txt b/CMakeLists.txt
+index d1f25fc..637b062 100644
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -7,17 +7,19 @@ if(CMAKE_C_BYTE_ORDER STREQUAL "BIG_ENDIAN")
+ endif()
+
+ add_executable(rvsim
+-    main.cpp
+-    clint.cpp
+-    hart.cpp
+-    mmio.cpp
+-    plic.cpp
+-    ram.cpp
+-    uart.cpp
++    src/main.cpp
++    src/mmio.cpp
++    src/hart/hart.cpp
++    src/devices/clint.cpp
++    src/devices/plic.cpp
++    src/devices/ram.cpp
++    src/devices/uart.cpp
+ )
+
+ target_compile_features(rvsim PRIVATE cxx_std_17)
+
++target_include_directories(rvsim PRIVATE src/hart/ src/devices/ src/)
++
+ add_custom_command(
+     OUTPUT soc.dtb
+     COMMAND dtc ARGS -o soc.dtb ${CMAKE_CURRENT_SOURCE_DIR}/soc.dts
+diff --git a/src/hart/hart.cpp b/src/hart/hart.cpp
+index 36f21a6..7db57bc 100644
+--- a/src/hart/hart.cpp
++++ b/src/hart/hart.cpp
+@@ -128,9 +128,9 @@ void hart::op_load()
+         break;
+     }
+
+-        regs[rd] = data;
+-        pc = pc + 4;
+-    }
++    regs[rd] = data;
++    pc = pc + 4;
++}
+
+ void hart::op_store()
+ {
+@@ -157,8 +157,8 @@ void hart::op_store()
+         break;
+     }
+
+-        pc = pc + 4;
+-    }
++    pc = pc + 4;
++}
+
+ void hart::op_imm()
+ {
+@@ -476,7 +476,7 @@ void hart::op_amo()
+             throw trap{MCAUSE_LOAD_ADDRESS_MISALIGNED_EXCEPTION, addr};
+         }
+
+-       load(addr, 4, (u8*)&ldata, MCAUSE_STORE_AMO_ACCESS_FAULT_EXCEPTION);
++       load(addr, 4, (u8*)&ldata, access_type_t::w);
+
+         regs[rd] = ldata;
+
+@@ -518,7 +518,7 @@ void hart::op_amo()
+             throw trap{MCAUSE_STORE_AMO_ADDRESS_MISALIGNED_EXCEPTION, addr};
+         }
+
+-        load(addr, 4, (u8*)&ldata, MCAUSE_STORE_AMO_ACCESS_FAULT_EXCEPTION);
++        load(addr, 4, (u8*)&ldata, access_type_t::w);
+
+         // clang-format off
+         switch (funct5) {
+@@ -562,7 +562,7 @@ void hart::step()
+             }
+         }
+
+-        load(pc, 4, (u8*)&inst, MCAUSE_INSTRUCTION_ACCESS_FAULT_EXCEPTION);
++        load(pc, 4, (u8*)&inst, access_type_t::x);
+
+         opcode = get_part(inst, 6, 0);
+         rs1 = get_part(inst, 19, 15);
+@@ -592,6 +592,8 @@ void hart::step()
+         // clang-format on
+
+     } catch (trap t) {
++
++        // TODO: medeleg
+         mcause = t.cause;
+         mtval = t.tval;
+
+@@ -791,10 +793,106 @@ bool hart::csr_rw(u32 csr, u32 read_mask, u32 write_mask, u32& read_data, u32 wr
+
+     return r;
+ }
+-void hart::load(u32 addr, u32 len, u8* data, u32 exc) {
+-    if (!mmio_->load(addr, len, data)) throw trap{exc, addr};
++
++u32 hart::access_type_to_mcause_access_fault(access_type_t access_type) {
++    switch (access_type) {
++    case access_type_t::r: return MCAUSE_LOAD_ACCESS_FAULT_EXCEPTION;
++    case access_type_t::w: return MCAUSE_STORE_AMO_ACCESS_FAULT_EXCEPTION;
++    case access_type_t::x: return MCAUSE_INSTRUCTION_ACCESS_FAULT_EXCEPTION;
++    }
++}
++
++void hart::sv32_ptw(u32 va, u32& pa, access_type_t access_type) {
++    u32 pte;
++    u32 ppa;
++    u32 vpn[2];
++
++    u32 mcause_access_fault = access_type_to_mcause_access_fault(access_type);;
++    u32 mcause_page_fault = access_type_to_mcause_page_fault(access_type);
++
++    vpn[1] = get_part(va, 31, 22);
++    vpn[0] = get_part(va, 21, 12);
++
++    ppa = get_part(satp, 19, 0, 12);
++
++    for (int i = 1; i >= 0; i--) {
++        u32 a = ppa + vpn[i] * 4;
++        if (!mmio_->load(a, 4, (u8*)&pte)) {
++            throw trap{mcause_access_fault, va};
++        }
++
++        u32 v = get_part(pte, 0, 0);
++        u32 xwr = get_part(pte, 3, 1);
++
++        if (v == 0 || xwr == 0b010 || xwr == 0b110) {
++            throw trap{mcause_page_fault, va};
++        }
++
++        if (xwr == 0b000) {
++            if (i == 0) {
++                throw trap{mcause_page_fault, va};
++            }
++            ppa = get_part(pte, 29, 10, 12);
++            continue;
++        }
++
++        if (!(static_cast<u32>(access_type) & xwr)) {
++            throw trap{mcause_page_fault, va};
++        }
++
++        switch (i) {
++            case 1:
++                if (get_part(pte, 21, 10) != 0) {
++                    throw trap{mcause_page_fault, va};
++                }
++                pa = get_part(pte, 29, 22, 22) + get_part(va, 21, 0);
++                break;
++            case 0:
++                pa = get_part(pte, 29, 12, 12) + get_part(va, 11, 0);
++                break;
++            default:
++                pa = 0;
++                break;
++        }
++
++
++    }
++}
++
++void hart::load(u32 addr, u32 len, u8* data, access_type_t access_type) {
++    u32 mcause_access_fault = access_type_to_mcause_access_fault(access_type);
++    if (get_part(priv, 1, 1) == 0b0 && get_part(satp, 31, 31) == 0b1) {
++        u32 pa;
++        sv32_ptw(addr, pa, access_type);
++        if (!mmio_->load(pa, len, data)) {
++            throw trap{mcause_access_fault, addr};
++        }
++    } else {
++        if (!mmio_->load(addr, len, data)) {
++            throw trap{mcause_access_fault, addr};
++        }
++    }
+ }
+
+-void hart::store(u32 addr, u32 len, const u8* data, u32 exc) {
+-    if (!mmio_->store(addr, len, data)) throw trap{exc, addr};
++void hart::store(u32 addr, u32 len, const u8* data, access_type_t access_type) {
++    u32 mcause_access_fault = access_type_to_mcause_access_fault(access_type);
++    if (get_part(priv, 1, 1) == 0b0 && get_part(satp, 31, 31) == 0b1) {
++        u32 pa;
++        sv32_ptw(addr, pa, access_type);
++        if (!mmio_->store(pa, len, data)) {
++            throw trap{mcause_access_fault, addr};
++        }
++    } else {
++        if (!mmio_->store(addr, len, data)) {
++            throw trap{mcause_access_fault, addr};
++        }
++    }
+ }
++
++// void hart::load(u32 addr, u32 len, u8* data, u32 exc) {
++//     if (!mmio_->load(addr, len, data)) throw trap{exc, addr};
++// }
++
++// void hart::store(u32 addr, u32 len, const u8* data, u32 exc) {
++//     if (!mmio_->store(addr, len, data)) throw trap{exc, addr};
++// }
+diff --git a/src/hart/hart.h b/src/hart/hart.h
+index 2dd423b..6d34242 100644
+--- a/src/hart/hart.h
++++ b/src/hart/hart.h
+@@ -3,6 +3,7 @@
+ #include "common.h"
+ #include "mmio.h"
+ #include "constants.h"
++#include <stdatomic.h>
+
+ class hart {
+
+@@ -39,6 +40,19 @@ public:
+     u32 mcause = 0;
+     u32 mtval = 0;
+
++    u64 medeleg;
++    u32 mideleg;
++
++    u32 sstatus;
++    u32 stvec;
++    u32 sip;
++    u32 sie;
++    u32 sscratch;
++    u32 sepc;
++    u32 scause;
++    u32 stval;
++    u32 satp;
++
+     u32 pc = 0;
+     u32 regs[32] = {0};
+     u32 priv = 0b11;
+@@ -50,8 +64,17 @@ private:
+     u32 reserved_addr = 0;
+
+     bool csr_rw(u32 csr, u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+-    void load(u32 addr, u32 len, u8* data, u32 exc = MCAUSE_LOAD_ACCESS_FAULT_EXCEPTION);
+-    void store(u32 addr, u32 len, const u8* data, u32 exc = MCAUSE_STORE_AMO_ACCESS_FAULT_EXCEPTION);
++
++
++    enum class access_type_t : u32 {r = 0b001, w = 0b010, x = 0b100};
++
++    u32 access_type_to_mcause_access_fault(access_type_t access_type);
++    u32 access_type_to_mcause_page_fault(access_type_t access_type);
++
++    void sv32_ptw(u32 va, u32& pa, access_type_t access_type);
++
++    void load(u32 addr, u32 len, u8* data, access_type_t access_type = access_type_t::r);
++    void store(u32 addr, u32 len, const u8* data, access_type_t access_type = access_type_t::w);
+
+     ////
+

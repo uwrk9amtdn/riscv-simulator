@@ -53,6 +53,11 @@ private:
     void load(u32 addr, u32 len, u8* data, u32 exc = MCAUSE_LOAD_ACCESS_FAULT_EXCEPTION);
     void store(u32 addr, u32 len, const u8* data, u32 exc = MCAUSE_STORE_AMO_ACCESS_FAULT_EXCEPTION);
 
+    struct trap {
+        u32 cause;
+        u32 tval;
+    };
+
     ////
 
     u32 opcode;

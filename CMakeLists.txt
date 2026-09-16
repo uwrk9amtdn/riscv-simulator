@@ -10,7 +10,7 @@ add_executable(rvsim
     src/main.cpp
     src/mmio.cpp
     src/hart/hart.cpp
-    src/hart/csr_rw.cpp
+    src/hart/csr.cpp
     src/hart/op_amo.cpp
     src/hart/op_auipc.cpp
     src/hart/op_branch.cpp

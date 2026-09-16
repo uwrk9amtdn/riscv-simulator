@@ -21,23 +21,21 @@ public:
     void step();
 
 public:
-    u32 misa = 0;
-    u32 mvendorid = 0;
-    u32 marchid = 0;
-    u32 mimpid = 0;
+    u32 misa       = 0;
+    u32 mvendorid  = 0;
+    u32 marchid    = 0;
+    u32 mimpid     = 0;
     u32 mhartid;
-    u32 mconfigptr = 0;
-
     u32 mstatus;
-    u32 mstatush = 0;
-    u32 mtvec = 0;
-    u32 mip = 0;
-    u32 mie = 0;
-
-    u32 mscratch = 0;
-    u32 mepc = 0;
-    u32 mcause = 0;
-    u32 mtval = 0;
+    u32 mstatush   = 0;
+    u32 mconfigptr = 0;
+    u32 mtvec      = 0;
+    u32 mip        = 0;
+    u32 mie        = 0;
+    u32 mscratch   = 0;
+    u32 mepc       = 0;
+    u32 mcause     = 0;
+    u32 mtval      = 0;
 
     u32 pc = 0;
     u32 regs[32] = {0};
@@ -81,4 +79,21 @@ private:
     void op_misc_mem();
     void op_system();
     void op_amo();
+
+private:
+    bool csr_rw_misa          (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    bool csr_rw_mvendorid     (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    bool csr_rw_marchid       (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    bool csr_rw_mimpid        (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    bool csr_rw_mhartid       (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    bool csr_rw_mstatus       (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    bool csr_rw_mstatush      (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    bool csr_rw_mconfigptr    (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    bool csr_rw_mtvec         (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    bool csr_rw_mip           (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    bool csr_rw_mie           (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    bool csr_rw_mscratch      (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    bool csr_rw_mepc          (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    bool csr_rw_mcause        (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    bool csr_rw_mtval         (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
 };

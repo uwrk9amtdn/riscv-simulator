@@ -107,3 +107,31 @@ void hart::op_system()
     }
     pc = pc_next;
 }
+
+bool hart::csr_rw(u32 csr, u32 read_mask, u32 write_mask, u32& read_data, u32 write_data)
+{
+    bool r = false;
+
+    if (priv != 0b11) {
+        return false;
+    }
+
+    switch (csr) {
+        case CSR_MISA:        return csr_rw_misa       (read_mask, write_mask, read_data, write_data);
+        case CSR_MVENDORID:   return csr_rw_mvendorid  (read_mask, write_mask, read_data, write_data);
+        case CSR_MARCHID:     return csr_rw_marchid    (read_mask, write_mask, read_data, write_data);
+        case CSR_MIMPID:      return csr_rw_mimpid     (read_mask, write_mask, read_data, write_data);
+        case CSR_MHARTID:     return csr_rw_mhartid    (read_mask, write_mask, read_data, write_data);
+        case CSR_MCONFIGPTR:  return csr_rw_mconfigptr (read_mask, write_mask, read_data, write_data);
+        case CSR_MSTATUS:     return csr_rw_mstatus    (read_mask, write_mask, read_data, write_data);
+        case CSR_MIE:         return csr_rw_mie        (read_mask, write_mask, read_data, write_data);
+        case CSR_MTVEC:       return csr_rw_mtvec      (read_mask, write_mask, read_data, write_data);
+        case CSR_MSTATUSH:    return csr_rw_mstatush   (read_mask, write_mask, read_data, write_data);
+        case CSR_MSCRATCH:    return csr_rw_mscratch   (read_mask, write_mask, read_data, write_data);
+        case CSR_MEPC:        return csr_rw_mepc       (read_mask, write_mask, read_data, write_data);
+        case CSR_MCAUSE:      return csr_rw_mcause     (read_mask, write_mask, read_data, write_data);
+        case CSR_MTVAL:       return csr_rw_mtval      (read_mask, write_mask, read_data, write_data);
+        case CSR_MIP:         return csr_rw_mip        (read_mask, write_mask, read_data, write_data);
+    };
+    return false;
+}

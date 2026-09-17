@@ -32,7 +32,7 @@ void hart::op_load()
         data = du16;
         break;
     default:
-        throw trap{MCAUSE_ILLEGAL_INSTRUCTION_EXCEPTION, inst};
+        throw trap{trap_cause_t::illegal_instruction_exception, inst};
         break;
     }
 

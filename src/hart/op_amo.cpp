@@ -12,19 +12,19 @@ void hart::op_amo()
     u32 sdata;
 
     if (funct3 != FUNCT3_AMO) {
-        throw trap{MCAUSE_ILLEGAL_INSTRUCTION_EXCEPTION, inst};
+        throw trap{trap_cause_t::illegal_instruction_exception, inst};
     }
 
     switch (funct5) {
     case FUNCT5_LR_W:
         if (rs2 != 0) {
-            throw trap{MCAUSE_ILLEGAL_INSTRUCTION_EXCEPTION, inst};
+            throw trap{trap_cause_t::illegal_instruction_exception, inst};
         }
 
         addr = regs[rs1];
 
         if (addr & 0x03) {
-            throw trap{MCAUSE_LOAD_ADDRESS_MISALIGNED_EXCEPTION, addr};
+            throw trap{trap_cause_t::load_address_misaligned_exception, addr};
         }
 
         load(addr, 4, (u8*)&ldata, access_type_t::w);
@@ -41,7 +41,7 @@ void hart::op_amo()
         sdata = regs[rs2];
 
         if (addr & 0x03) {
-            throw trap{MCAUSE_STORE_AMO_ADDRESS_MISALIGNED_EXCEPTION, addr};
+            throw trap{trap_cause_t::store_amo_address_misaligned_exception, addr};
         }
 
         if (reservation_set && reserved_addr == addr) {
@@ -66,7 +66,7 @@ void hart::op_amo()
         addr = regs[rs1];
 
         if (addr & 0x03) {
-            throw trap{MCAUSE_STORE_AMO_ADDRESS_MISALIGNED_EXCEPTION, addr};
+            throw trap{trap_cause_t::store_amo_address_misaligned_exception, addr};
         }
 
         load(addr, 4, (u8*)&ldata, access_type_t::w);
@@ -92,7 +92,7 @@ void hart::op_amo()
 
         break;
     default:
-        throw trap{MCAUSE_ILLEGAL_INSTRUCTION_EXCEPTION, inst};
+        throw trap{trap_cause_t::illegal_instruction_exception, inst};
         break;
     }
 

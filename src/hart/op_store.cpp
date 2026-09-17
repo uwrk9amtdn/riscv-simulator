@@ -21,7 +21,7 @@ void hart::op_store()
         store(addr, 4, (u8*)&data);
         break;
     default:
-        throw trap{MCAUSE_ILLEGAL_INSTRUCTION_EXCEPTION, inst};
+        throw trap{trap_cause_t::illegal_instruction_exception, inst};
         break;
     }
 

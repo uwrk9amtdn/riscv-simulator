@@ -25,12 +25,12 @@ void hart::op_branch()
         target_pc = pc + (regs[rs1] >= regs[rs2] ? imm : 4);
         break;
     default:
-        throw MCAUSE_ILLEGAL_INSTRUCTION_EXCEPTION;
+        throw trap{trap_cause_t::illegal_instruction_exception, inst};
         break;
     }
 
     if (target_pc & 0x3) {
-        throw trap{MCAUSE_INSTRUCTION_ADDRESS_MISALIGNED_EXCEPTION, target_pc};
+        throw trap{trap_cause_t::instruction_address_misaligned_exception, target_pc};
     } else {
         pc = target_pc;
     }

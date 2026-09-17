@@ -11,7 +11,7 @@ void hart::op_misc_mem()
         break;
 
     default:
-        throw trap{MCAUSE_ILLEGAL_INSTRUCTION_EXCEPTION, inst};
+        throw trap{trap_cause_t::illegal_instruction_exception, inst};
         break;
     }
 

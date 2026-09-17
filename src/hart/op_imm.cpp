@@ -35,7 +35,7 @@ void hart::op_imm()
         if (funct7 == FUNCT7_SLLI) {
             regs[rd] = regs[rs1] << shamt;
         } else {
-            throw trap{MCAUSE_ILLEGAL_INSTRUCTION_EXCEPTION, inst};
+            throw trap{trap_cause_t::illegal_instruction_exception, inst};
         }
         break;
 
@@ -51,13 +51,13 @@ void hart::op_imm()
             break;
 
         default:
-            throw trap{MCAUSE_ILLEGAL_INSTRUCTION_EXCEPTION, inst};
+            throw trap{trap_cause_t::illegal_instruction_exception, inst};
             break;
         }
         break;
 
     default:
-        throw trap{MCAUSE_ILLEGAL_INSTRUCTION_EXCEPTION, inst};
+        throw trap{trap_cause_t::illegal_instruction_exception, inst};
         break;
     }
     pc = pc + 4;

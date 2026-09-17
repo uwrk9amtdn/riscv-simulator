@@ -28,17 +28,16 @@ public:
     u32 mhartid;
     u32 mstatus;
     u32 mstatush   = 0;
-    u32 mconfigptr = 0;
     u32 mtvec      = 0;
+    u64 medeleg;
+    u32 mideleg;
     u32 mip        = 0;
     u32 mie        = 0;
     u32 mscratch   = 0;
     u32 mepc       = 0;
     u32 mcause     = 0;
     u32 mtval      = 0;
-
-    u64 medeleg;
-    u32 mideleg;
+    u32 mconfigptr = 0;
 
     u32 sstatus;
     u32 stvec;
@@ -60,23 +59,46 @@ private:
     bool reservation_set = false;
     u32 reserved_addr = 0;
 
-    bool csr_rw(u32 csr, u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw(u32 csr, u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
 
     enum class access_type_t : u32 {r = 0b001, w = 0b010, x = 0b100};
 
-    u32 access_type_to_mcause_access_fault(access_type_t access_type);
-    u32 access_type_to_mcause_page_fault(access_type_t access_type);
+    enum class trap_cause_t : u32 {
+        instruction_address_misaligned_exception       = 0,
+        instruction_access_fault_exception             = 1,
+        illegal_instruction_exception                  = 2,
+        breakpoint_exception                           = 3,
+        load_address_misaligned_exception              = 4,
+        load_access_fault_exception                    = 5,
+        store_amo_address_misaligned_exception         = 6,
+        store_amo_access_fault_exception               = 7,
+        environment_call_from_u_mode_exception         = 8,
+        environment_call_from_s_mode_exception         = 9,
+        environment_call_from_m_mode_exception         = 11,
+        instruction_page_fault_exception               = 12,
+        load_page_fault_exception                      = 13,
+        store_amo_page_fault_exception                 = 15,
+
+        supervisor_software_interrupt                  = 1  | (1U << 31),
+        machine_software_interrupt                     = 3  | (1U << 31),
+        supervisor_timer_interrupt                     = 5  | (1U << 31),
+        machine_timer_interrupt                        = 7  | (1U << 31),
+        supervisor_external_interrupt                  = 9  | (1U << 31),
+        machine_external_interrupt                     = 11 | (1U << 31)
+    };
+
+    struct trap {
+        trap_cause_t cause;
+        u32 value;
+    };
+
+    trap_cause_t access_type_to_access_fault_exception(access_type_t access_type);
+    trap_cause_t access_type_to_page_fault_exception(access_type_t access_type);
 
     void sv32_ptw(u32 va, u32& pa, access_type_t access_type);
 
     void load(u32 addr, u32 len, u8* data, access_type_t access_type = access_type_t::r);
     void store(u32 addr, u32 len, const u8* data, access_type_t access_type = access_type_t::w);
-
-
-    struct trap {
-        u32 cause;
-        u32 tval;
-    };
 
     ////
 
@@ -103,19 +125,19 @@ private:
     void op_amo();
 
 private:
-    bool csr_rw_misa          (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    bool csr_rw_mvendorid     (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    bool csr_rw_marchid       (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    bool csr_rw_mimpid        (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    bool csr_rw_mhartid       (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    bool csr_rw_mstatus       (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    bool csr_rw_mstatush      (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    bool csr_rw_mconfigptr    (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    bool csr_rw_mtvec         (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    bool csr_rw_mip           (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    bool csr_rw_mie           (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    bool csr_rw_mscratch      (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    bool csr_rw_mepc          (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    bool csr_rw_mcause        (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    bool csr_rw_mtval         (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_misa          (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_mvendorid     (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_marchid       (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_mimpid        (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_mhartid       (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_mstatus       (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_mstatush      (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_mconfigptr    (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_mtvec         (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_mip           (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_mie           (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_mscratch      (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_mepc          (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_mcause        (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_mtval         (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
 };

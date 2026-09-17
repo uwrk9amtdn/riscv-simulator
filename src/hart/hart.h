@@ -37,6 +37,19 @@ public:
     u32 mcause     = 0;
     u32 mtval      = 0;
 
+    u64 medeleg;
+    u32 mideleg;
+
+    u32 sstatus;
+    u32 stvec;
+    u32 sip;
+    u32 sie;
+    u32 sscratch;
+    u32 sepc;
+    u32 scause;
+    u32 stval;
+    u32 satp;
+
     u32 pc = 0;
     u32 regs[32] = {0};
     u32 priv = 0b11;
@@ -48,8 +61,17 @@ private:
     u32 reserved_addr = 0;
 
     bool csr_rw(u32 csr, u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void load(u32 addr, u32 len, u8* data, u32 exc = MCAUSE_LOAD_ACCESS_FAULT_EXCEPTION);
-    void store(u32 addr, u32 len, const u8* data, u32 exc = MCAUSE_STORE_AMO_ACCESS_FAULT_EXCEPTION);
+
+    enum class access_type_t : u32 {r = 0b001, w = 0b010, x = 0b100};
+
+    u32 access_type_to_mcause_access_fault(access_type_t access_type);
+    u32 access_type_to_mcause_page_fault(access_type_t access_type);
+
+    void sv32_ptw(u32 va, u32& pa, access_type_t access_type);
+
+    void load(u32 addr, u32 len, u8* data, access_type_t access_type = access_type_t::r);
+    void store(u32 addr, u32 len, const u8* data, access_type_t access_type = access_type_t::w);
+
 
     struct trap {
         u32 cause;

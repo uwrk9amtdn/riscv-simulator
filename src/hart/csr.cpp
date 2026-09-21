@@ -14,7 +14,7 @@ void hart::csr_rw_mvendorid (u32 read_mask, u32 write_mask, u32& read_data, u32 
         throw trap{trap_cause_t::illegal_instruction_exception, inst};
     }
     read_data = mvendorid & read_mask;
-    }
+}
 
 void hart::csr_rw_marchid (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
     // read only

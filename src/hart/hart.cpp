@@ -43,10 +43,10 @@ void hart::step()
 
         load(pc, 4, (u8*)&inst, access_type_t::x);
 
-        opcode = get_part(inst, 6, 0);
-        rs1 = get_part(inst, 19, 15);
-        rs2 = get_part(inst, 24, 20);
-        rd = get_part(inst, 11, 7);
+        opcode = get_part(inst,  6,  0);
+        rs1    = get_part(inst, 19, 15);
+        rs2    = get_part(inst, 24, 20);
+        rd     = get_part(inst, 11,  7);
         funct3 = get_part(inst, 14, 12);
         funct7 = get_part(inst, 31, 25);
 

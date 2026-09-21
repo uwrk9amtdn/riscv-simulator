@@ -353,7 +353,7 @@ void uart::update_interrupt()
     if (ier & UART_IER_ERBFI) {
         bool trigger = false;
         if (fcr & UART_FCR_ENABLE_FIFO) {
-            int l = 0;
+            uint l = 0;
             switch (fcr & 0b11000000) {
             case 0b00000000:
                 l = 1;

@@ -1,12 +1,8 @@
 
 #include <hart.h>
 
-void hart::op_system()
+void hart::decode_system()
 {
-
-    u32 csr = get_part(inst, 31, 20);
-
-    u32 pc_next = pc + 4;
     switch (funct3) {
         case FUNCT3_ECALL_EBREAK_WFI_MRET: {
             if (rd != 0 || rs1 != 0) {
@@ -17,65 +13,104 @@ void hart::op_system()
 
                 case FUNCT7_ECALL_EBREAK: {
                     switch (rs2) {
-                        case RS2_ECALL: {
-                            if (priv == 0b11) { // m mode
-                                throw trap{trap_cause_t::environment_call_from_m_mode_exception, 0};
-                            } else {
-                                throw trap{trap_cause_t::environment_call_from_u_mode_exception, 0};
-                            }
-                        } break;
-
-                        case RS2_EBREAK: throw trap{trap_cause_t::breakpoint_exception, 0}; break;
-
-                        default: throw trap{trap_cause_t::illegal_instruction_exception, inst}; break;
+                        case RS2_ECALL:  return inst_ecall();
+                        case RS2_EBREAK: return inst_ebreak();
                     }
+                    throw trap{trap_cause_t::illegal_instruction_exception, inst}; break;
                 } break;
 
                 case FUNCT7_WFI: {
                     switch (rs2) {
-                        case RS2_WFI:
-                            break; // WFI implemented as NOP
-                        default:
-                            throw trap{trap_cause_t::illegal_instruction_exception, inst};
-                            break;
+                        case RS2_WFI: return inst_wfi();
                     }
+                    throw trap{trap_cause_t::illegal_instruction_exception, inst};
                 } break;
 
                 case FUNCT7_MRET: {
                     switch (rs2) {
-                        case RS2_MRET: {
-                            if (mstatus & (1 << 7)) {
-                                mstatus = set_bit(mstatus, 3);
-                            } else {
-                                mstatus = clear_bit(mstatus, 3);
-                            }
-                            mstatus = set_bit(mstatus, 7);
-
-                            priv = get_part(mstatus, 12, 11);
-                            mstatus = set_part(mstatus, 12, 11, 0b00);
-
-                            pc_next = mepc;
-                        } break;
-
-                        default: throw trap{trap_cause_t::illegal_instruction_exception, inst}; break;
+                        case RS2_MRET: return inst_mret();
                     }
+                    throw trap{trap_cause_t::illegal_instruction_exception, inst}; break;
                 } break;
-
-                default: throw trap{trap_cause_t::illegal_instruction_exception, inst}; break;
             }
+            throw trap{trap_cause_t::illegal_instruction_exception, inst}; break;
 
         } break;
 
-        case FUNCT3_CSRRW:  csr_rw(csr, -1, -1, regs[rd], regs[rs1]); break;
-        case FUNCT3_CSRRS:  csr_rw(csr, -1, regs[rs1], regs[rd], -1); break;
-        case FUNCT3_CSRRC:  csr_rw(csr, -1, regs[rs1], regs[rd], 0);  break;
-        case FUNCT3_CSRRWI: csr_rw(csr, -1, -1, regs[rd], rs1);       break;
-        case FUNCT3_CSRRSI: csr_rw(csr, -1, rs1, regs[rd], -1);       break;
-        case FUNCT3_CSRRCI: csr_rw(csr, -1, rs1, regs[rd], 0);        break;
-
-        default: throw trap{trap_cause_t::illegal_instruction_exception, inst}; break;
+        case FUNCT3_CSRRW:  return inst_csrrw ();
+        case FUNCT3_CSRRS:  return inst_csrrs ();
+        case FUNCT3_CSRRC:  return inst_csrrc ();
+        case FUNCT3_CSRRWI: return inst_csrrwi();
+        case FUNCT3_CSRRSI: return inst_csrrsi();
+        case FUNCT3_CSRRCI: return inst_csrrci();
     }
-    pc = pc_next;
+    throw trap{trap_cause_t::illegal_instruction_exception, inst};
+}
+
+void hart::inst_ecall() {
+    if (priv == 0b11) { // m mode
+        throw trap{trap_cause_t::environment_call_from_m_mode_exception, 0};
+    } else {
+        throw trap{trap_cause_t::environment_call_from_u_mode_exception, 0};
+    }
+}
+
+void hart::inst_ebreak() {
+    throw trap{trap_cause_t::breakpoint_exception, 0};
+}
+
+void hart::inst_wfi() {
+    pc = pc + 4;
+}
+
+void hart::inst_mret() {
+    if (mstatus & (1 << 7)) {
+        mstatus = set_bit(mstatus, 3);
+    } else {
+        mstatus = clear_bit(mstatus, 3);
+    }
+    mstatus = set_bit(mstatus, 7);
+
+    priv = get_part(mstatus, 12, 11);
+    mstatus = set_part(mstatus, 12, 11, 0b00);
+
+    pc = mepc;
+}
+
+void hart::inst_csrrw() {
+    u32 csr = get_part(inst, 31, 20);
+    csr_rw(csr, -1, -1, regs[rd], regs[rs1]);
+    pc = pc + 4;
+}
+
+void hart::inst_csrrs() {
+    u32 csr = get_part(inst, 31, 20);
+    csr_rw(csr, -1, regs[rs1], regs[rd], -1);
+    pc = pc + 4;
+}
+
+void hart::inst_csrrc() {
+    u32 csr = get_part(inst, 31, 20);
+    csr_rw(csr, -1, regs[rs1], regs[rd], 0);
+    pc = pc + 4;
+}
+
+void hart::inst_csrrwi() {
+    u32 csr = get_part(inst, 31, 20);
+    csr_rw(csr, -1, -1, regs[rd], rs1);
+    pc = pc + 4;
+}
+
+void hart::inst_csrrsi() {
+    u32 csr = get_part(inst, 31, 20);
+    csr_rw(csr, -1, rs1, regs[rd], -1);
+    pc = pc + 4;
+}
+
+void hart::inst_csrrci() {
+    u32 csr = get_part(inst, 31, 20);
+    csr_rw(csr, -1, rs1, regs[rd], 0);
+    pc = pc + 4;
 }
 
 void hart::csr_rw(u32 csr, u32 read_mask, u32 write_mask, u32& read_data, u32 write_data)

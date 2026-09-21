@@ -111,18 +111,18 @@ private:
     u32 funct3;
     u32 funct7;
 
-    void op_lui();
-    void op_auipc();
-    void op_jal();
-    void op_jalr();
-    void op_branch();
-    void op_load();
-    void op_store();
-    void op_imm();
-    void op_op();
-    void op_misc_mem();
-    void op_system();
-    void op_amo();
+    void decode_lui();
+    void decode_auipc();
+    void decode_jal();
+    void decode_jalr();
+    void decode_branch();
+    void decode_load();
+    void decode_store();
+    void decode_imm();
+    void decode_op();
+    void decode_misc_mem();
+    void decode_system();
+    void decode_amo();
 
 private:
     void csr_rw_misa          (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
@@ -140,4 +140,85 @@ private:
     void csr_rw_mepc          (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
     void csr_rw_mcause        (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
     void csr_rw_mtval         (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+
+private:
+    void inst_lui       ();
+    void inst_auipc     ();
+    void inst_jal       ();
+    void inst_jalr      ();
+
+    void inst_beq       ();
+    void inst_bne       ();
+    void inst_blt       ();
+    void inst_bge       ();
+    void inst_bltu      ();
+    void inst_bgeu      ();
+
+    void inst_lb        ();
+    void inst_lh        ();
+    void inst_lw        ();
+    void inst_lbu       ();
+    void inst_lhu       ();
+
+    void inst_sb        ();
+    void inst_sh        ();
+    void inst_sw        ();
+
+    void inst_addi      ();
+    void inst_slti      ();
+    void inst_sltiu     ();
+    void inst_xori      ();
+    void inst_ori       ();
+    void inst_andi      ();
+    void inst_slli      ();
+    void inst_srli      ();
+    void inst_srai      ();
+
+    void inst_add       ();
+    void inst_sub       ();
+    void inst_sll       ();
+    void inst_slt       ();
+    void inst_sltu      ();
+    void inst_xor       ();
+    void inst_srl       ();
+    void inst_sra       ();
+    void inst_or        ();
+    void inst_and       ();
+    void inst_mul       ();
+    void inst_mulh      ();
+    void inst_mulhsu    ();
+    void inst_mulhu     ();
+    void inst_div       ();
+    void inst_divu      ();
+    void inst_rem       ();
+    void inst_remu      ();
+
+    void inst_fence     ();
+    void inst_fence_i   ();
+
+    void inst_ecall     ();
+    void inst_ebreak    ();
+    void inst_wfi       ();
+    void inst_mret      ();
+
+    void inst_csrrw     ();
+    void inst_csrrs     ();
+    void inst_csrrc     ();
+    void inst_csrrwi    ();
+    void inst_csrrsi    ();
+    void inst_csrrci    ();
+
+    void inst_lr_w      ();
+    void inst_sc_w      ();
+
+    void inst_amoswap_w ();
+    void inst_amoadd_w  ();
+    void inst_amoxor_w  ();
+    void inst_amoand_w  ();
+    void inst_amoor_w   ();
+    void inst_amomin_w  ();
+    void inst_amomax_w  ();
+    void inst_amominu_w ();
+    void inst_amomaxu_w ();
+
 };

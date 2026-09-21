@@ -52,21 +52,21 @@ void hart::step()
 
         // clang-format off
         switch (opcode) {
-        case OP_LUI:      op_lui();      break;
-        case OP_AUIPC:    op_auipc();    break;
-        case OP_JAL:      op_jal();      break;
-        case OP_JALR:     op_jalr();     break;
-        case OP_BRANCH:   op_branch();   break;
-        case OP_LOAD:     op_load();     break;
-        case OP_STORE:    op_store();    break;
-        case OP_IMM:      op_imm();      break;
-        case OP_OP:       op_op();       break;
-        case OP_MISC_MEM: op_misc_mem(); break;
-        case OP_SYSTEM:   op_system();   break;
-        case OP_AMO:      op_amo();      break;
-        default:
-            throw trap{trap_cause_t::illegal_instruction_exception, inst};
-            break;
+            case OP_LUI:      decode_lui();      break;
+            case OP_AUIPC:    decode_auipc();    break;
+            case OP_JAL:      decode_jal();      break;
+            case OP_JALR:     decode_jalr();     break;
+            case OP_BRANCH:   decode_branch();   break;
+            case OP_LOAD:     decode_load();     break;
+            case OP_STORE:    decode_store();    break;
+            case OP_IMM:      decode_imm();      break;
+            case OP_OP:       decode_op();       break;
+            case OP_MISC_MEM: decode_misc_mem(); break;
+            case OP_SYSTEM:   decode_system();   break;
+            case OP_AMO:      decode_amo();      break;
+            default:
+                throw trap{trap_cause_t::illegal_instruction_exception, inst};
+                break;
         }
         // clang-format on
 

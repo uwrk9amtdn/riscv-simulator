@@ -1,6 +1,11 @@
 #include <hart.h>
 
-void hart::op_jalr()
+void hart::decode_jalr()
+{
+    inst_jalr();
+}
+
+void hart::inst_jalr()
 {
     u32 target_pc;
 

@@ -1,7 +1,11 @@
 #include <hart.h>
 
-void hart::op_jal()
+void hart::decode_jal()
 {
+    inst_jal();
+}
+
+void hart::inst_jal() {
     u32 target_pc;
     imm = sign_extend(get_part(inst, 31, 31, 20) | get_part(inst, 19, 12, 12) | get_part(inst, 20, 20, 11) | get_part(inst, 30, 21, 1), 20);
     target_pc = pc + imm;

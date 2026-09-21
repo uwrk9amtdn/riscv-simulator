@@ -27,6 +27,22 @@ private:
     hart* h;
 };
 
+class supervisor_context : public hart_context {
+public:
+    supervisor_context(hart* h)
+    {
+        this->h = h;
+    }
+    void set_external_interrupt(bool level) override
+    {
+        h->set_seip(level);
+    }
+    ~supervisor_context() override { }
+
+private:
+    hart* h;
+};
+
 class plic : public mmio_device {
 
 public:

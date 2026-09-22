@@ -25,12 +25,12 @@ public:
     u32 mvendorid  = 0;
     u32 marchid    = 0;
     u32 mimpid     = 0;
-    u32 mhartid;
-    u32 mstatus;
+    u32 mhartid    = 0;
+    u32 mstatus    = 0;
     u32 mstatush   = 0;
     u32 mtvec      = 0;
-    u64 medeleg;
-    u32 mideleg;
+    u64 medeleg    = 0;
+    u32 mideleg    = 0;
     u32 mip        = 0;
     u32 mie        = 0;
     u32 mscratch   = 0;
@@ -39,15 +39,15 @@ public:
     u32 mtval      = 0;
     u32 mconfigptr = 0;
 
-    u32 sstatus;
-    u32 stvec;
-    u32 sip;
-    u32 sie;
-    u32 sscratch;
-    u32 sepc;
-    u32 scause;
-    u32 stval;
-    u32 satp;
+    u32 sstatus    = 0;
+    u32 stvec      = 0;
+    u32 sip        = 0;
+    u32 sie        = 0;
+    u32 sscratch   = 0;
+    u32 sepc       = 0;
+    u32 scause     = 0;
+    u32 stval      = 0;
+    u32 satp       = 0;
 
     u32 pc = 0;
     u32 regs[32] = {0};
@@ -111,6 +111,7 @@ private:
     u32 funct3;
     u32 funct7;
 
+private:
     void decode_lui();
     void decode_auipc();
     void decode_jal();

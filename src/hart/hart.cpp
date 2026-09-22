@@ -71,6 +71,13 @@ void hart::step()
         // clang-format on
 
     } catch (trap t) {
+
+        if (priv == 0b00 || priv == 0b01) {
+
+        } else {
+
+        }
+
         // TODO: medeleg
         mcause = static_cast<u32>(t.cause);
         mtval = t.value;

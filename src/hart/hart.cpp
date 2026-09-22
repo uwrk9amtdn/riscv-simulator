@@ -108,7 +108,11 @@ void hart::set_meip(bool level)
 
 void hart::set_seip(bool level)
 {
-    (void)level;
+    if (level) {
+        sip = set_bit(sip, 11);
+    } else {
+        sip = clear_bit(sip, 11);
+    }
 }
 
 void hart::set_mtip(bool level)
@@ -122,7 +126,11 @@ void hart::set_mtip(bool level)
 
 void hart::set_stip(bool level)
 {
-    (void)level;
+    if (level) {
+        sip = set_bit(sip, 7);
+    } else {
+        sip = clear_bit(sip, 7);
+    }
 }
 
 void hart::set_msip(bool level)

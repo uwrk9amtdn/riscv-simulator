@@ -64,15 +64,12 @@ void hart::inst_wfi() {
 }
 
 void hart::inst_mret() {
-    if (mstatus & (1 << 7)) {
-        mstatus = set_bit(mstatus, 3);
-    } else {
-        mstatus = clear_bit(mstatus, 3);
-    }
-    mstatus = set_bit(mstatus, 7);
 
-    priv = get_part(mstatus, 12, 11);
-    mstatus = set_part(mstatus, 12, 11, 0b00);
+    mstatus.MIE() = mstatus.MPIE();
+    mstatus.MPIE() = 0b1;
+
+    priv = mstatus.MPP();
+    mstatus.MPP() = 0b00;
 
     pc = mepc;
 }

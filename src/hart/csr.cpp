@@ -44,8 +44,8 @@ void hart::csr_rw_mstatus (u32 read_mask, u32 write_mask, u32& read_data, u32 wr
     mstatus &= 0x1888; // only MPP, MPIE, MIE
 
     // 00: user mode, 11: machine mode
-    if (get_part(mstatus, 12, 11)) { // mode 01 and 10 is not supported, force 11
-        mstatus |= create_mask(12, 11);
+    if (mstatus.MPP()) { // mode 01 and 10 is not supported, force 11
+        mstatus.MPP() = 0b11;
     }
 }
 

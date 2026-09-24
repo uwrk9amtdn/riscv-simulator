@@ -21,33 +21,122 @@ public:
     void step();
 
 public:
-    u32 misa       = 0;
-    u32 mvendorid  = 0;
-    u32 marchid    = 0;
-    u32 mimpid     = 0;
-    u32 mhartid    = 0;
-    u32 mstatus    = 0;
-    u32 mstatush   = 0;
-    u32 mtvec      = 0;
-    u64 medeleg    = 0;
-    u32 mideleg    = 0;
-    u32 mip        = 0;
-    u32 mie        = 0;
-    u32 mscratch   = 0;
-    u32 mepc       = 0;
-    u32 mcause     = 0;
-    u32 mtval      = 0;
-    u32 mconfigptr = 0;
+    struct csr {
+        u32 value{0};
 
-    u32 sstatus    = 0;
-    u32 stvec      = 0;
-    u32 sip        = 0;
-    u32 sie        = 0;
-    u32 sscratch   = 0;
-    u32 sepc       = 0;
-    u32 scause     = 0;
-    u32 stval      = 0;
-    u32 satp       = 0;
+        csr() {}
+        csr(u32 v) : value{v} {}
+
+        csr(const csr&) = delete;
+        csr& operator=(const csr&) = delete;
+
+        csr& operator=(u32 v) {
+            value = v;
+            return *this;
+        }
+
+        operator u32() const {
+            return value;
+        }
+
+        csr& operator&=(u32 v) {
+            value &= v;
+            return *this;
+        }
+
+        csr& operator|=(u32 v) {
+            value |= v;
+            return *this;
+        }
+
+        template <int left, int right = left>
+        struct field_ref {
+            u32* p;
+
+            field_ref& operator=(u32 v) {
+                *p = set_part(*p, left, right, v);
+                return *this;
+            }
+            operator u32() const { return get_part(*p, left, right); }
+        };
+
+        template <int left, int right = left>
+        field_ref<left, right> field() { return {&value}; }
+    };
+
+    struct csr_mstatus : csr {
+        using csr::operator=;
+        using csr::operator u32;
+
+        auto SIE  (){ return field<1>    (); }
+        auto MIE  (){ return field<3>    (); }
+        auto SPIE (){ return field<5>    (); }
+        auto MPIE (){ return field<7>    (); }
+        auto SPP  (){ return field<8>    (); }
+        auto MPP  (){ return field<12,11>(); }
+        auto MPRV (){ return field<17>   (); }
+        auto SUM  (){ return field<18>   (); }
+        auto MXR  (){ return field<19>   (); }
+        auto TVM  (){ return field<20>   (); }
+        auto TW   (){ return field<21>   (); }
+        auto TSR  (){ return field<22>   (); }
+    };
+
+    struct csr_mip : csr {
+        using csr::operator=;
+        using csr::operator u32;
+
+        auto SSIP   (){ return field<1> (); };
+        auto MSIP   (){ return field<3> (); };
+        auto STIP   (){ return field<5> (); };
+        auto MTIP   (){ return field<7> (); };
+        auto SEIP   (){ return field<9> (); };
+        auto MEIP   (){ return field<11>(); };
+        auto LCOFIP (){ return field<13>(); };
+    };
+
+    struct csr_mie : csr {
+        using csr::operator=;
+        using csr::operator u32;
+
+        auto SSIE   (){ return field<1>  (); };
+        auto MSIE   (){ return field<3>  (); };
+        auto STIE   (){ return field<5>  (); };
+        auto MTIE   (){ return field<7>  (); };
+        auto SEIE   (){ return field<9>  (); };
+        auto MEIE   (){ return field<11> (); };
+        auto LCOFIE (){ return field<13> (); };
+    };
+
+public:
+    csr         misa;
+    csr         mvendorid;
+    csr         marchid;
+    csr         mimpid;
+    csr         mhartid;
+    csr_mstatus mstatus;
+    csr         mstatush;
+    csr         mtvec;
+    csr         medeleg;
+    csr         mideleg;
+    csr_mip     mip;
+    csr_mie     mie;
+    csr         mscratch;
+    csr         mepc;
+    csr         mcause;
+    csr         mtval;
+    csr         mconfigptr;
+
+    // TODO: how to update s mode CSRs when m mode CSRs modified
+    csr         sstatus;
+    csr         stvec;
+    csr         sip;
+    csr         sie;
+    csr         sscratch;
+    csr         sepc;
+    csr         scause;
+    csr         stval;
+    csr         satp;
 
     u32 pc = 0;
     u32 regs[32] = {0};

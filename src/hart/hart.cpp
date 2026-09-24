@@ -7,7 +7,7 @@ hart::hart(::mmio* mmio, u32 mhartid, u32 pc)
     this->pc = pc;
 
     mstatus = 0;
-    mstatus |= create_mask(12, 11);
+    mstatus.MPP() = 0b11;
 }
 
 void hart::step()
@@ -16,7 +16,7 @@ void hart::step()
 
         switch (priv) {
             case 0b00: { // user
-                if (mip & mie & (1 << 11)) {
+                if (mip.MEIP() && mie.MEIE()) {
                     throw trap{trap_cause_t::machine_external_interrupt, 0};
                 }
             } break;
@@ -31,12 +31,16 @@ void hart::step()
             } break;
         }
 
-        if ((mstatus & 0x8)) { // MIE is set
-            if (mip & mie & (1 << 11)) {
+        if (mstatus.MIE()) {
+            if (mip.MEIP() && mie.MEIE()) {
                 throw trap{trap_cause_t::machine_external_interrupt, 0};
-            } else if (mip & mie & (1 << 3)) {
+            }
+
+            if (mip.MSIP() && mie.MSIE()) {
                 throw trap{trap_cause_t::machine_software_interrupt, 0};
-            } else if (mip & mie & (1 << 7)) {
+            }
+
+            if (mip.MTIP() && mie.MTIE()) {
                 throw trap{trap_cause_t::machine_timer_interrupt, 0};
             }
         }
@@ -82,14 +86,10 @@ void hart::step()
         mcause = static_cast<u32>(t.cause);
         mtval = t.value;
 
-        if (mstatus & (1 << 3)) {
-            mstatus = set_bit(mstatus, 7);
-        } else {
-            mstatus = clear_bit(mstatus, 7);
-        }
-        mstatus = clear_bit(mstatus, 3);
+        mstatus.MPIE() = mstatus.MIE();
+        mstatus.MIE() = 0b0;
+        mstatus.MPP() = priv;
 
-        mstatus = set_part(mstatus, 12, 11, priv);
         priv = 0b11;
 
         mepc = pc;
@@ -106,52 +106,32 @@ void hart::step()
 
 void hart::set_meip(bool level)
 {
-    if (level) {
-        mip = set_bit(mip, 11);
-    } else {
-        mip = clear_bit(mip, 11);
-    }
+    mip.MEIP() = level;
 }
 
 void hart::set_seip(bool level)
 {
-    if (level) {
-        sip = set_bit(sip, 11);
-    } else {
-        sip = clear_bit(sip, 11);
-    }
+    mip.SEIP() = level;
 }
 
 void hart::set_mtip(bool level)
 {
-    if (level) {
-        mip = set_bit(mip, 7);
-    } else {
-        mip = clear_bit(mip, 7);
-    }
+    mip.MTIP() = level;
 }
 
 void hart::set_stip(bool level)
 {
-    if (level) {
-        sip = set_bit(sip, 7);
-    } else {
-        sip = clear_bit(sip, 7);
-    }
+    mip.STIP() = level;
 }
 
 void hart::set_msip(bool level)
 {
-    if (level) {
-        mip = set_bit(mip, 3);
-    } else {
-        mip = clear_bit(mip, 3);
-    }
+    mip.MSIP() = level;
 }
 
 void hart::set_ssip(bool level)
 {
-    (void)level;
+    mip.SSIP() = level;
 }
 
 hart::trap_cause_t hart::access_type_to_access_fault_exception(access_type_t access_type)

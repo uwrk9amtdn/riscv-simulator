@@ -64,49 +64,55 @@ public:
         field_ref<left, right> field() { return {&value}; }
     };
 
+    #define CSR_FIELD(name, bit) auto name() { return field<bit>(); }
+    #define CSR_FIELD_R(name, left, right) auto name() { return field<left, right>(); }
+
     struct csr_mstatus : csr {
         using csr::operator=;
         using csr::operator u32;
 
-        auto SIE  (){ return field<1>    (); }
-        auto MIE  (){ return field<3>    (); }
-        auto SPIE (){ return field<5>    (); }
-        auto MPIE (){ return field<7>    (); }
-        auto SPP  (){ return field<8>    (); }
-        auto MPP  (){ return field<12,11>(); }
-        auto MPRV (){ return field<17>   (); }
-        auto SUM  (){ return field<18>   (); }
-        auto MXR  (){ return field<19>   (); }
-        auto TVM  (){ return field<20>   (); }
-        auto TW   (){ return field<21>   (); }
-        auto TSR  (){ return field<22>   (); }
+        CSR_FIELD   (SIE  , 1)
+        CSR_FIELD   (MIE  , 3)
+        CSR_FIELD   (SPIE , 5)
+        CSR_FIELD   (MPIE , 7)
+        CSR_FIELD   (SPP  , 8)
+        CSR_FIELD_R (MPP  , 12, 11)
+        CSR_FIELD   (MPRV , 17)
+        CSR_FIELD   (SUM  , 18)
+        CSR_FIELD   (MXR  , 19)
+        CSR_FIELD   (TVM  , 20)
+        CSR_FIELD   (TW   , 21)
+        CSR_FIELD   (TSR  , 22)
     };
 
     struct csr_mip : csr {
         using csr::operator=;
         using csr::operator u32;
 
-        auto SSIP   (){ return field<1> (); };
-        auto MSIP   (){ return field<3> (); };
-        auto STIP   (){ return field<5> (); };
-        auto MTIP   (){ return field<7> (); };
-        auto SEIP   (){ return field<9> (); };
-        auto MEIP   (){ return field<11>(); };
-        auto LCOFIP (){ return field<13>(); };
+        CSR_FIELD (SSIP   , 1)
+        CSR_FIELD (MSIP   , 3)
+        CSR_FIELD (STIP   , 5)
+        CSR_FIELD (MTIP   , 7)
+        CSR_FIELD (SEIP   , 9)
+        CSR_FIELD (MEIP   , 11)
+        CSR_FIELD (LCOFIP , 13)
     };
 
     struct csr_mie : csr {
         using csr::operator=;
         using csr::operator u32;
 
-        auto SSIE   (){ return field<1>  (); };
-        auto MSIE   (){ return field<3>  (); };
-        auto STIE   (){ return field<5>  (); };
-        auto MTIE   (){ return field<7>  (); };
-        auto SEIE   (){ return field<9>  (); };
-        auto MEIE   (){ return field<11> (); };
-        auto LCOFIE (){ return field<13> (); };
+        CSR_FIELD (SSIE   , 1)
+        CSR_FIELD (MSIE   , 3)
+        CSR_FIELD (STIE   , 5)
+        CSR_FIELD (MTIE   , 7)
+        CSR_FIELD (SEIE   , 9)
+        CSR_FIELD (MEIE   , 11)
+        CSR_FIELD (LCOFIE , 13)
     };
+
+    #undef CSR_FIELD
+    #undef CSR_FIELD_R
 
 public:
     csr         misa;

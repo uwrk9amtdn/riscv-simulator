@@ -63,7 +63,7 @@ void hart::csr_rw_mconfigptr (u32 read_mask, u32 write_mask, u32& read_data, u32
 void hart::csr_rw_mtvec (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
     read_data = mtvec & read_mask;
     mtvec = (mtvec & ~write_mask) | (write_data & write_mask);
-    mtvec &= ~create_mask(1, 1); // mode[1] reserved
+    mtvec.field<1>() = 0; // mode[1] reserved
 }
 
 void hart::csr_rw_mip (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
@@ -84,7 +84,7 @@ void hart::csr_rw_mscratch (u32 read_mask, u32 write_mask, u32& read_data, u32 w
 void hart::csr_rw_mepc (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
     read_data = mepc & read_mask;
     mepc = (mepc & ~write_mask) | (write_data & write_mask);
-    mepc &= ~create_mask(1, 0); // mepc[1:0] is always zero
+    mepc.field<1,0>() = 0; // mepc[1:0] is always zero
 }
 
 void hart::csr_rw_mcause (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
@@ -96,4 +96,43 @@ void hart::csr_rw_mtval (u32 read_mask, u32 write_mask, u32& read_data, u32 writ
     read_data = mtval & read_mask;
     mtval = (mtval & ~write_mask) | (write_data & write_mask);
     // TODO: should be readonly zero?
+}
+
+void hart::csr_rw_sstatus (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
+
+}
+
+void hart::csr_rw_sip (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
+
+}
+
+void hart::csr_rw_sie (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
+
+}
+
+void hart::csr_rw_stvec (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
+
+}
+
+void hart::csr_rw_sscratch (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
+    read_data = sscratch & read_mask;
+    sscratch = (sscratch & ~write_mask) | (write_data & write_mask);
+}
+
+void hart::csr_rw_sepc (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
+    read_data = sepc & read_mask;
+    sepc = (sepc & ~write_mask) | (write_data & write_mask);
+    sepc.field<1,0>() = 0; // sepc[1:0] is always zero
+}
+
+void hart::csr_rw_scause (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
+
+}
+
+void hart::csr_rw_stval (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
+
+}
+
+void hart::csr_rw_satp (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
+
 }

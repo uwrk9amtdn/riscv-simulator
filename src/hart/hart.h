@@ -133,11 +133,7 @@ public:
     csr         mtval;
     csr         mconfigptr;
 
-    // TODO: how to update s mode CSRs when m mode CSRs modified
-    csr         sstatus;
     csr         stvec;
-    csr         sip;
-    csr         sie;
     csr         sscratch;
     csr         sepc;
     csr         scause;
@@ -236,6 +232,16 @@ private:
     void csr_rw_mepc          (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
     void csr_rw_mcause        (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
     void csr_rw_mtval         (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+
+    void csr_rw_sstatus       (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_sip           (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_sie           (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_stvec         (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_sscratch      (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_sepc          (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_scause        (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_stval         (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_satp          (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
 
 private:
     void inst_lui       ();

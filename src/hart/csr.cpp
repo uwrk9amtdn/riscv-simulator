@@ -1,40 +1,22 @@
 #include <hart.h>
 
 void hart::csr_rw_misa (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
-    // read only
-    if (write_mask != 0) {
-        throw trap{trap_cause_t::illegal_instruction_exception, inst};
-    }
     read_data = misa & read_mask;
 }
 
 void hart::csr_rw_mvendorid (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
-    // read only
-    if (write_mask != 0) {
-        throw trap{trap_cause_t::illegal_instruction_exception, inst};
-    }
     read_data = mvendorid & read_mask;
 }
 
 void hart::csr_rw_marchid (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
-    // read only
-    if (write_mask != 0) {
-        throw trap{trap_cause_t::illegal_instruction_exception, inst};
-    }
     read_data = marchid & read_mask;
 }
 
 void hart::csr_rw_mimpid (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
-    if (write_mask != 0) {
-        throw trap{trap_cause_t::illegal_instruction_exception, inst};
-    }
     read_data = mimpid & read_mask;
 }
 
 void hart::csr_rw_mhartid (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
-    if (write_mask != 0) {
-        throw trap{trap_cause_t::illegal_instruction_exception, inst};
-    }
     read_data = mhartid & read_mask;
 }
 
@@ -54,9 +36,6 @@ void hart::csr_rw_mstatush (u32 read_mask, u32 write_mask, u32& read_data, u32 w
 }
 
 void hart::csr_rw_mconfigptr (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
-    if (write_mask != 0) {
-        throw trap{trap_cause_t::illegal_instruction_exception, inst};
-    }
     read_data = mconfigptr & read_mask;
 }
 
@@ -95,7 +74,6 @@ void hart::csr_rw_mcause (u32 read_mask, u32 write_mask, u32& read_data, u32 wri
 void hart::csr_rw_mtval (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
     read_data = mtval & read_mask;
     mtval = (mtval & ~write_mask) | (write_data & write_mask);
-    // TODO: should be readonly zero?
 }
 
 void hart::csr_rw_sstatus (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
@@ -111,7 +89,9 @@ void hart::csr_rw_sie (u32 read_mask, u32 write_mask, u32& read_data, u32 write_
 }
 
 void hart::csr_rw_stvec (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
-
+    read_data = stvec & read_mask;
+    stvec = (stvec & ~write_mask) | (write_data & write_mask);
+    stvec.field<1>() = 0; // mode[1] reserved
 }
 
 void hart::csr_rw_sscratch (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
@@ -126,11 +106,13 @@ void hart::csr_rw_sepc (u32 read_mask, u32 write_mask, u32& read_data, u32 write
 }
 
 void hart::csr_rw_scause (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
-
+    read_data = stval & read_mask;
+    stval = (stval & ~write_mask) | (write_data & write_mask);
 }
 
 void hart::csr_rw_stval (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {
-
+    read_data = stval & read_mask;
+    stval = (stval & ~write_mask) | (write_data & write_mask);
 }
 
 void hart::csr_rw_satp (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data) {

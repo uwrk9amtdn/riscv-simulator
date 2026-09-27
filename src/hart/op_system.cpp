@@ -112,9 +112,34 @@ void hart::inst_csrrci() {
 
 void hart::csr_rw(u32 csr, u32 read_mask, u32 write_mask, u32& read_data, u32 write_data)
 {
-    // TODO: privilege check
 
-    if (priv != 0b11) throw trap{trap_cause_t::illegal_instruction_exception, inst};
+    u32 lowest_priv = get_part(csr, 9, 8);
+    u32 access_type = get_part(csr, 11, 10);
+
+    switch (lowest_priv) {
+        case 0b11: // machine
+            if (priv != 0b11) {
+                throw trap{trap_cause_t::illegal_instruction_exception, inst};
+            }
+            break;
+
+        case 0b01: // supervisor
+            if (priv == 0b00) {
+                throw trap{trap_cause_t::illegal_instruction_exception, inst};
+            }
+            break;
+
+        case 0b10:
+            throw trap{trap_cause_t::illegal_instruction_exception, inst};
+            break;
+
+        case 0b00:
+            break;
+    }
+
+    if (access_type == 0b11 && write_mask != 0) {
+        throw trap{trap_cause_t::illegal_instruction_exception, inst};
+    }
 
     switch (csr) {
         case CSR_MISA:       return csr_rw_misa       (read_mask, write_mask, read_data, write_data);
@@ -132,6 +157,16 @@ void hart::csr_rw(u32 csr, u32 read_mask, u32 write_mask, u32& read_data, u32 wr
         case CSR_MCAUSE:     return csr_rw_mcause     (read_mask, write_mask, read_data, write_data);
         case CSR_MTVAL:      return csr_rw_mtval      (read_mask, write_mask, read_data, write_data);
         case CSR_MIP:        return csr_rw_mip        (read_mask, write_mask, read_data, write_data);
+
+        case CSR_SSTATUS:    return csr_rw_sstatus    (read_mask, write_mask, read_data, write_data);
+        case CSR_STVEC:      return csr_rw_stvec      (read_mask, write_mask, read_data, write_data);
+        case CSR_SIP:        return csr_rw_sip        (read_mask, write_mask, read_data, write_data);
+        case CSR_SIE:        return csr_rw_sie        (read_mask, write_mask, read_data, write_data);
+        case CSR_SSCRATCH:   return csr_rw_sscratch   (read_mask, write_mask, read_data, write_data);
+        case CSR_SEPC:       return csr_rw_sepc       (read_mask, write_mask, read_data, write_data);
+        case CSR_SCAUSE:     return csr_rw_scause     (read_mask, write_mask, read_data, write_data);
+        case CSR_STVAL:      return csr_rw_stval      (read_mask, write_mask, read_data, write_data);
+        case CSR_SATP:       return csr_rw_satp       (read_mask, write_mask, read_data, write_data);
 
         default: throw trap{trap_cause_t::illegal_instruction_exception, inst};
     };

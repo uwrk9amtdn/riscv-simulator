@@ -1,4 +1,5 @@
 #include "hart.h"
+#include <stdexcept>
 
 hart::hart(::mmio* mmio, u32 mhartid, u32 pc)
 {
@@ -167,6 +168,10 @@ void hart::sv32_ptw(u32 va, u32& pa, access_type_t access_type) {
 
     ppa = get_part(satp, 19, 0, 12);
 
+    if (get_part(satp, 21, 20)) {
+        throw std::runtime_error("only 32 bit physical address supported");
+    }
+
     for (int i = 1; i >= 0; i--) {
         u32 a = ppa + vpn[i] * 4;
         if (!mmio_->load(a, 4, (u8*)&pte)) {
@@ -180,6 +185,10 @@ void hart::sv32_ptw(u32 va, u32& pa, access_type_t access_type) {
             throw trap{page_fault_exception, va};
         }
 
+        if (get_part(pte, 31, 30)) {
+            throw std::runtime_error("only 32 bit physical address supported");
+        }
+
         if (xwr == 0b000) {
             if (i == 0) {
                 throw trap{page_fault_exception, va};
@@ -188,25 +197,65 @@ void hart::sv32_ptw(u32 va, u32& pa, access_type_t access_type) {
             continue;
         }
 
+        // TODO: mstatus.MXR bit is not implemented yet. MXR == 1 is prevented. will be implemented later if the code tries to set MXR
         if (!(static_cast<u32>(access_type) & xwr)) {
             throw trap{page_fault_exception, va};
         }
 
+        /* TODO: will be implemented later if necessary
+            if (U) {
+                if (priv == 0b01) {
+                    if ((access_type == r || access_type == w) && !mstatus.SUM) {
+                        throw page_fault_exception;
+                    }
+                    if (access_type == x) {
+                        throw page_fault_exception;
+                    }
+                }
+            } else {
+                if (priv == 0b00) {
+                    throw page_fault_exception;
+                }
+            }
+        */
+
+        if (i == 1 && get_part(pte, 19, 10) != 0) {
+            throw trap{page_fault_exception, va};
+        }
+
+        bool store = false;
+
+        if (get_part(pte, 6, 6) == 0b0) {
+            pte = set_bit(pte, 6);
+            store = true;
+        }
+
+
+        if (access_type == access_type_t::w && get_part(pte, 7, 7) == 0b0) {
+            pte = set_bit(pte, 7);
+            store = true;
+        }
+
+        // TODO: PTE update must be atomic. Will not be issue in a single core simulator. Will be implemented later
+        if (store) {
+            if (!mmio_->store(a, 4, (u8*)&pte)) {
+                throw trap{access_fault_exception, va};
+            }
+        }
+
         switch (i) {
             case 1:
-                if (get_part(pte, 21, 10) != 0) {
-                    throw trap{page_fault_exception, va};
-                }
-                pa = get_part(pte, 29, 22, 22) + get_part(va, 21, 0);
+                pa = get_part(pte, 29, 20, 22) | get_part(va, 21, 0);
                 break;
             case 0:
-                pa = get_part(pte, 29, 12, 12) + get_part(va, 11, 0);
+                pa = get_part(pte, 29, 10, 12) | get_part(va, 11, 0);
                 break;
             default:
                 pa = 0;
                 break;
         }
 
+        return;
     }
 }
 

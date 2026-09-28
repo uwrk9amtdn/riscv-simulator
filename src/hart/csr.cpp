@@ -1,5 +1,6 @@
 #include "common.h"
 #include <hart.h>
+#include <stdexcept>
 
 void hart::csr_rw_misa (u32 rm, u32 wm, u32& rd, u32 wd) {
     rd = misa & rm;
@@ -24,7 +25,12 @@ void hart::csr_rw_mhartid (u32 rm, u32 wm, u32& rd, u32 wd) {
 void hart::csr_rw_mstatus (u32 rm, u32 wm, u32& rd, u32 wd) {
     rd = mstatus & rm;
     mstatus = set_with_mask(mstatus, wd, wm);
-    mstatus &= 0x1888; // only MPP, MPIE, MIE
+
+    mstatus &= 0x7E19AA; // TSR, TW, TWM, MXR, SUM, MPRV, MPP, SPP, MPIE, SPIE, MIE, SIE
+
+    if (mstatus.TVM() || mstatus.TW() || mstatus.TSR() || mstatus.MXR() || mstatus.SUM() || mstatus.MPRV()) {
+        throw std::runtime_error("not implemented yet");
+    }
 
     // 00: user mode, 11: machine mode
     if (mstatus.MPP()) { // mode 01 and 10 is not supported, force 11

@@ -41,6 +41,11 @@ typedef int8_t i8;
     }
 }
 
+[[nodiscard]] constexpr u32 set_with_mask(u32 d, u32 v, u32 m)
+{
+    return (d & ~m) | (v & m);
+}
+
 template <typename T>
 [[nodiscard]] constexpr T set_bit(T d, u32 index)
 {

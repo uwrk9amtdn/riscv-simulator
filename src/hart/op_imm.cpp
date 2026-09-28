@@ -32,7 +32,7 @@ void hart::decode_imm()
 }
 
 void hart::inst_addi() {
-    imm = get_part_s(inst, 31, 20);
+    imm = get_part_signed(inst, 31, 20);
 
     regs[rd] = regs[rs1] + imm;
 
@@ -40,7 +40,7 @@ void hart::inst_addi() {
 }
 
 void hart::inst_slti() {
-    imm = get_part_s(inst, 31, 20);
+    imm = get_part_signed(inst, 31, 20);
 
     regs[rd] = (i32)regs[rs1] < imm ? 1 : 0;
 
@@ -48,7 +48,7 @@ void hart::inst_slti() {
 }
 
 void hart::inst_sltiu() {
-    imm = get_part_s(inst, 31, 20);
+    imm = get_part_signed(inst, 31, 20);
 
     regs[rd] = regs[rs1] < (u32)imm ? 1 : 0;
 
@@ -56,7 +56,7 @@ void hart::inst_sltiu() {
 }
 
 void hart::inst_xori() {
-    imm = get_part_s(inst, 31, 20);
+    imm = get_part_signed(inst, 31, 20);
 
     regs[rd] = regs[rs1] ^ imm;
 
@@ -64,7 +64,7 @@ void hart::inst_xori() {
 }
 
 void hart::inst_ori() {
-    imm = get_part_s(inst, 31, 20);
+    imm = get_part_signed(inst, 31, 20);
 
     regs[rd] = regs[rs1] | imm;
 
@@ -72,7 +72,7 @@ void hart::inst_ori() {
 }
 
 void hart::inst_andi() {
-    imm = get_part_s(inst, 31, 20);
+    imm = get_part_signed(inst, 31, 20);
 
     regs[rd] = regs[rs1] & imm;
 
@@ -80,7 +80,7 @@ void hart::inst_andi() {
 }
 
 void hart::inst_slli() {
-    imm = get_part_s(inst, 31, 20);
+    imm = get_part_signed(inst, 31, 20);
     u32 shamt = rs2;
 
     regs[rd] = regs[rs1] << shamt;
@@ -89,7 +89,7 @@ void hart::inst_slli() {
 }
 
 void hart::inst_srli() {
-    imm = get_part_s(inst, 31, 20);
+    imm = get_part_signed(inst, 31, 20);
     u32 shamt = rs2;
 
     regs[rd] = regs[rs1] >> shamt;
@@ -98,7 +98,7 @@ void hart::inst_srli() {
 }
 
 void hart::inst_srai() {
-    imm = get_part_s(inst, 31, 20);
+    imm = get_part_signed(inst, 31, 20);
     u32 shamt = rs2;
 
     regs[rd] = (i32)regs[rs1] >> shamt;

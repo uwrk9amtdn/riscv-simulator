@@ -16,7 +16,7 @@ void hart::inst_lb() {
     i8 di8;
     u32 addr;
     u32 data;
-    addr = regs[rs1] + get_part_s(inst, 31, 20);
+    addr = regs[rs1] + get_part_signed(inst, 31, 20);
     load(addr, 1, (u8*)&di8);
     data = di8;
     regs[rd] = data;
@@ -28,7 +28,7 @@ void hart::inst_lh() {
     u32 data;
     i16 di16;
 
-    addr = regs[rs1] + get_part_s(inst, 31, 20);
+    addr = regs[rs1] + get_part_signed(inst, 31, 20);
 
     load(addr, 2, (u8*)&di16);
     data = di16;
@@ -41,7 +41,7 @@ void hart::inst_lw() {
     u32 addr;
     u32 data;
 
-    addr = regs[rs1] + get_part_s(inst, 31, 20);
+    addr = regs[rs1] + get_part_signed(inst, 31, 20);
 
     load(addr, 4, (u8*)&data);
 
@@ -54,7 +54,7 @@ void hart::inst_lbu() {
     u32 data;
     u8 du8;
 
-    addr = regs[rs1] + get_part_s(inst, 31, 20);
+    addr = regs[rs1] + get_part_signed(inst, 31, 20);
 
     load(addr, 1, (u8*)&du8);
     data = du8;
@@ -68,7 +68,7 @@ void hart::inst_lhu() {
     u32 data;
     u16 du16;
 
-    addr = regs[rs1] + get_part_s(inst, 31, 20);
+    addr = regs[rs1] + get_part_signed(inst, 31, 20);
 
     load(addr, 2, (u8*)&du16);
     data = du16;

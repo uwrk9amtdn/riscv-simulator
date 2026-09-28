@@ -110,7 +110,7 @@ void hart::inst_csrrci() {
     pc = pc + 4;
 }
 
-void hart::csr_rw(u32 csr, u32 read_mask, u32 write_mask, u32& read_data, u32 write_data)
+void hart::csr_rw(u32 csr, u32 rm, u32 wm, u32& rd, u32 wd)
 {
 
     u32 lowest_priv = get_part(csr, 9, 8);
@@ -137,36 +137,36 @@ void hart::csr_rw(u32 csr, u32 read_mask, u32 write_mask, u32& read_data, u32 wr
             break;
     }
 
-    if (access_type == 0b11 && write_mask != 0) {
+    if (access_type == 0b11 && wm != 0) {
         throw trap{trap_cause_t::illegal_instruction_exception, inst};
     }
 
     switch (csr) {
-        case CSR_MISA:       return csr_rw_misa       (read_mask, write_mask, read_data, write_data);
-        case CSR_MVENDORID:  return csr_rw_mvendorid  (read_mask, write_mask, read_data, write_data);
-        case CSR_MARCHID:    return csr_rw_marchid    (read_mask, write_mask, read_data, write_data);
-        case CSR_MIMPID:     return csr_rw_mimpid     (read_mask, write_mask, read_data, write_data);
-        case CSR_MHARTID:    return csr_rw_mhartid    (read_mask, write_mask, read_data, write_data);
-        case CSR_MCONFIGPTR: return csr_rw_mconfigptr (read_mask, write_mask, read_data, write_data);
-        case CSR_MSTATUS:    return csr_rw_mstatus    (read_mask, write_mask, read_data, write_data);
-        case CSR_MIE:        return csr_rw_mie        (read_mask, write_mask, read_data, write_data);
-        case CSR_MTVEC:      return csr_rw_mtvec      (read_mask, write_mask, read_data, write_data);
-        case CSR_MSTATUSH:   return csr_rw_mstatush   (read_mask, write_mask, read_data, write_data);
-        case CSR_MSCRATCH:   return csr_rw_mscratch   (read_mask, write_mask, read_data, write_data);
-        case CSR_MEPC:       return csr_rw_mepc       (read_mask, write_mask, read_data, write_data);
-        case CSR_MCAUSE:     return csr_rw_mcause     (read_mask, write_mask, read_data, write_data);
-        case CSR_MTVAL:      return csr_rw_mtval      (read_mask, write_mask, read_data, write_data);
-        case CSR_MIP:        return csr_rw_mip        (read_mask, write_mask, read_data, write_data);
+        case CSR_MISA:       return csr_rw_misa       (rm, wm, rd, wd);
+        case CSR_MVENDORID:  return csr_rw_mvendorid  (rm, wm, rd, wd);
+        case CSR_MARCHID:    return csr_rw_marchid    (rm, wm, rd, wd);
+        case CSR_MIMPID:     return csr_rw_mimpid     (rm, wm, rd, wd);
+        case CSR_MHARTID:    return csr_rw_mhartid    (rm, wm, rd, wd);
+        case CSR_MCONFIGPTR: return csr_rw_mconfigptr (rm, wm, rd, wd);
+        case CSR_MSTATUS:    return csr_rw_mstatus    (rm, wm, rd, wd);
+        case CSR_MIE:        return csr_rw_mie        (rm, wm, rd, wd);
+        case CSR_MTVEC:      return csr_rw_mtvec      (rm, wm, rd, wd);
+        case CSR_MSTATUSH:   return csr_rw_mstatush   (rm, wm, rd, wd);
+        case CSR_MSCRATCH:   return csr_rw_mscratch   (rm, wm, rd, wd);
+        case CSR_MEPC:       return csr_rw_mepc       (rm, wm, rd, wd);
+        case CSR_MCAUSE:     return csr_rw_mcause     (rm, wm, rd, wd);
+        case CSR_MTVAL:      return csr_rw_mtval      (rm, wm, rd, wd);
+        case CSR_MIP:        return csr_rw_mip        (rm, wm, rd, wd);
 
-        case CSR_SSTATUS:    return csr_rw_sstatus    (read_mask, write_mask, read_data, write_data);
-        case CSR_STVEC:      return csr_rw_stvec      (read_mask, write_mask, read_data, write_data);
-        case CSR_SIP:        return csr_rw_sip        (read_mask, write_mask, read_data, write_data);
-        case CSR_SIE:        return csr_rw_sie        (read_mask, write_mask, read_data, write_data);
-        case CSR_SSCRATCH:   return csr_rw_sscratch   (read_mask, write_mask, read_data, write_data);
-        case CSR_SEPC:       return csr_rw_sepc       (read_mask, write_mask, read_data, write_data);
-        case CSR_SCAUSE:     return csr_rw_scause     (read_mask, write_mask, read_data, write_data);
-        case CSR_STVAL:      return csr_rw_stval      (read_mask, write_mask, read_data, write_data);
-        case CSR_SATP:       return csr_rw_satp       (read_mask, write_mask, read_data, write_data);
+        case CSR_SSTATUS:    return csr_rw_sstatus    (rm, wm, rd, wd);
+        case CSR_STVEC:      return csr_rw_stvec      (rm, wm, rd, wd);
+        case CSR_SIP:        return csr_rw_sip        (rm, wm, rd, wd);
+        case CSR_SIE:        return csr_rw_sie        (rm, wm, rd, wd);
+        case CSR_SSCRATCH:   return csr_rw_sscratch   (rm, wm, rd, wd);
+        case CSR_SEPC:       return csr_rw_sepc       (rm, wm, rd, wd);
+        case CSR_SCAUSE:     return csr_rw_scause     (rm, wm, rd, wd);
+        case CSR_STVAL:      return csr_rw_stval      (rm, wm, rd, wd);
+        case CSR_SATP:       return csr_rw_satp       (rm, wm, rd, wd);
 
         default: throw trap{trap_cause_t::illegal_instruction_exception, inst};
     };

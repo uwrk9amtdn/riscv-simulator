@@ -150,7 +150,7 @@ private:
     bool reservation_set = false;
     u32 reserved_addr = 0;
 
-    void csr_rw(u32 csr, u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw(u32 csr, u32 rm, u32 wm, u32& rd, u32 wd);
 
     enum class access_type_t : u32 {r = 0b001, w = 0b010, x = 0b100};
 
@@ -217,31 +217,31 @@ private:
     void decode_amo();
 
 private:
-    void csr_rw_misa          (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_mvendorid     (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_marchid       (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_mimpid        (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_mhartid       (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_mstatus       (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_mstatush      (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_mconfigptr    (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_mtvec         (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_mip           (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_mie           (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_mscratch      (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_mepc          (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_mcause        (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_mtval         (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_misa          (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_mvendorid     (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_marchid       (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_mimpid        (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_mhartid       (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_mstatus       (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_mstatush      (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_mconfigptr    (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_mtvec         (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_mip           (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_mie           (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_mscratch      (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_mepc          (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_mcause        (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_mtval         (u32 rm, u32 wm, u32& rd, u32 wd);
 
-    void csr_rw_sstatus       (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_sip           (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_sie           (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_stvec         (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_sscratch      (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_sepc          (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_scause        (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_stval         (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
-    void csr_rw_satp          (u32 read_mask, u32 write_mask, u32& read_data, u32 write_data);
+    void csr_rw_sstatus       (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_sip           (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_sie           (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_stvec         (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_sscratch      (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_sepc          (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_scause        (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_stval         (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_satp          (u32 rm, u32 wm, u32& rd, u32 wd);
 
 private:
     void inst_lui       ();

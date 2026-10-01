@@ -166,7 +166,7 @@ void hart::sv32_ptw(u32 va, u32& pa, access_type_t access_type) {
     vpn[1] = get_part(va, 31, 22);
     vpn[0] = get_part(va, 21, 12);
 
-    ppa = get_part(satp, 19, 0, 12);
+    ppa = satp.PPN() << 12;
 
     // if (get_part(satp, 21, 20)) {
     //     throw std::runtime_error("only 32 bit physical address supported");
@@ -269,7 +269,7 @@ void hart::load(u32 addr, u32 len, u8* data, access_type_t access_type) {
 
     // TODO: implement MPRV bit
     // disabled for now
-    if (0 && get_part(priv, 1, 1) == 0b0 && get_part(satp, 31, 31) == 0b1) {
+    if (0 && get_part(priv, 1, 1) == 0b0 && satp.MODE() == 0b1) {
         u32 pa;
         sv32_ptw(addr, pa, access_type);
         if (!mmio_->load(pa, len, data)) {
@@ -286,7 +286,7 @@ void hart::store(u32 addr, u32 len, const u8* data, access_type_t access_type) {
     trap_cause_t access_fault_exception = access_type_to_access_fault_exception(access_type);
     // TODO: implement MPRV bit
     // disabled for now
-    if (0 && get_part(priv, 1, 1) == 0b0 && get_part(satp, 31, 31) == 0b1) {
+    if (0 && get_part(priv, 1, 1) == 0b0 && satp.MODE() == 0b1) {
         u32 pa;
         sv32_ptw(addr, pa, access_type);
         if (!mmio_->store(pa, len, data)) {

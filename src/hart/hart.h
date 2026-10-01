@@ -4,6 +4,9 @@
 #include "mmio.h"
 #include "constants.h"
 
+// TODO: implement sret, sfence_vma, medeleg, mideleg.
+// TODO: instruction priv check
+
 class hart {
 
 public:
@@ -111,6 +114,15 @@ public:
         CSR_FIELD (LCOFIE , 13)
     };
 
+    struct csr_satp : csr {
+        using csr::operator=;
+        using csr::operator u32;
+
+        CSR_FIELD_R (PPN , 21, 0)
+        CSR_FIELD_R (ASID, 30, 22)
+        CSR_FIELD   (MODE, 31)
+    };
+
     #undef CSR_FIELD
     #undef CSR_FIELD_R
 
@@ -138,7 +150,7 @@ public:
     csr         sepc;
     csr         scause;
     csr         stval;
-    csr         satp;
+    csr_satp    satp;
 
     u32 pc = 0;
     u32 regs[32] = {0};
@@ -297,11 +309,13 @@ private:
 
     void inst_fence     ();
     void inst_fence_i   ();
+    void inst_sfence_vma();
 
     void inst_ecall     ();
     void inst_ebreak    ();
     void inst_wfi       ();
     void inst_mret      ();
+    void inst_sret      ();
 
     void inst_csrrw     ();
     void inst_csrrs     ();

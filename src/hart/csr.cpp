@@ -131,5 +131,5 @@ void hart::csr_rw_stval (u32 rm, u32 wm, u32& rd, u32 wd) {
 void hart::csr_rw_satp (u32 rm, u32 wm, u32& rd, u32 wd) {
     rd = satp & rm;
     satp = set_with_mask(satp, wd, wm);
-    satp.field<31,30>() = 0b00;
+    satp.field<21,20>() = 0b00;
 }

@@ -74,6 +74,10 @@ void hart::inst_mret() {
     pc = mepc;
 }
 
+void hart::inst_sret() {
+
+}
+
 void hart::inst_csrrw() {
     u32 csr = get_part(inst, 31, 20);
     csr_rw(csr, -1, -1, regs[rd], regs[rs1]);

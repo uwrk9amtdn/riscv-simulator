@@ -168,9 +168,9 @@ void hart::sv32_ptw(u32 va, u32& pa, access_type_t access_type) {
 
     ppa = get_part(satp, 19, 0, 12);
 
-    if (get_part(satp, 21, 20)) {
-        throw std::runtime_error("only 32 bit physical address supported");
-    }
+    // if (get_part(satp, 21, 20)) {
+    //     throw std::runtime_error("only 32 bit physical address supported");
+    // }
 
     for (int i = 1; i >= 0; i--) {
         u32 a = ppa + vpn[i] * 4;
@@ -186,10 +186,13 @@ void hart::sv32_ptw(u32 va, u32& pa, access_type_t access_type) {
         }
 
         if (get_part(pte, 31, 30)) {
+            throw trap{page_fault_exception, va};
+            // TODO: should we throw access fault
             throw std::runtime_error("only 32 bit physical address supported");
         }
 
         if (xwr == 0b000) {
+            // TODO: U, A, D bits must be zero in non leaf PTEs
             if (i == 0) {
                 throw trap{page_fault_exception, va};
             }
@@ -198,6 +201,8 @@ void hart::sv32_ptw(u32 va, u32& pa, access_type_t access_type) {
         }
 
         // TODO: mstatus.MXR bit is not implemented yet. MXR == 1 is prevented. will be implemented later if the code tries to set MXR
+        // TODO: S mode can access pages marked U regardless of SUM bit
+        // TODO: MPRV bit is not implemented
         if (!(static_cast<u32>(access_type) & xwr)) {
             throw trap{page_fault_exception, va};
         }
@@ -262,6 +267,7 @@ void hart::sv32_ptw(u32 va, u32& pa, access_type_t access_type) {
 void hart::load(u32 addr, u32 len, u8* data, access_type_t access_type) {
     trap_cause_t access_fault_exception = access_type_to_access_fault_exception(access_type);
 
+    // TODO: implement MPRV bit
     // disabled for now
     if (0 && get_part(priv, 1, 1) == 0b0 && get_part(satp, 31, 31) == 0b1) {
         u32 pa;
@@ -278,6 +284,7 @@ void hart::load(u32 addr, u32 len, u8* data, access_type_t access_type) {
 
 void hart::store(u32 addr, u32 len, const u8* data, access_type_t access_type) {
     trap_cause_t access_fault_exception = access_type_to_access_fault_exception(access_type);
+    // TODO: implement MPRV bit
     // disabled for now
     if (0 && get_part(priv, 1, 1) == 0b0 && get_part(satp, 31, 31) == 0b1) {
         u32 pa;

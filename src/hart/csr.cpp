@@ -84,7 +84,13 @@ void hart::csr_rw_mtval (u32 rm, u32 wm, u32& rd, u32 wd) {
 }
 
 void hart::csr_rw_sstatus (u32 rm, u32 wm, u32& rd, u32 wd) {
+    u32 mask = 0x0c0122;
+    rd = (mstatus & rm & mask);
+    mstatus = set_with_mask(mstatus, wd, wm & mask);
 
+    if (mstatus.MXR() || mstatus.SUM()) {
+        throw std::runtime_error("not implemented yet");
+    }
 }
 
 void hart::csr_rw_sip (u32 rm, u32 wm, u32& rd, u32 wd) {
@@ -123,5 +129,7 @@ void hart::csr_rw_stval (u32 rm, u32 wm, u32& rd, u32 wd) {
 }
 
 void hart::csr_rw_satp (u32 rm, u32 wm, u32& rd, u32 wd) {
-
+    rd = satp & rm;
+    satp = set_with_mask(satp, wd, wm);
+    satp.field<31,30>() = 0b00;
 }

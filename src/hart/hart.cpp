@@ -15,21 +15,27 @@ void hart::step()
 {
     try {
 
+        if (mip.MEIP() && mie.MEIE()) {
+            throw trap{trap_cause_t::machine_external_interrupt, 0};
+        }
+
+        if (mip.SEIP() && mie.SEIE() && !(priv == 0b11 && medeleg.field<)) {
+            if (priv == 0b11)
+            throw trap{trap_cause_t::supervisor_external_interrupt, 0};
+        }
+
         switch (priv) {
-            case 0b00: { // user
-                if (mip.MEIP() && mie.MEIE()) {
-                    throw trap{trap_cause_t::machine_external_interrupt, 0};
-                }
-            } break;
-            case 0b01: { // supervisor
+            case 0b00: // user
+            break;
+            case 0b01: // supervisor
 
-            } break;
-            case 0b11: { // machine
+            break;
+            case 0b11: // machine
 
-            } break;
-            default: {
+            break;
+            default:
 
-            } break;
+            break;
         }
 
         if (mstatus.MIE()) {

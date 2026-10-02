@@ -244,6 +244,8 @@ private:
     void csr_rw_mepc          (u32 rm, u32 wm, u32& rd, u32 wd);
     void csr_rw_mcause        (u32 rm, u32 wm, u32& rd, u32 wd);
     void csr_rw_mtval         (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_medeleg       (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_mideleg       (u32 rm, u32 wm, u32& rd, u32 wd);
 
     void csr_rw_sstatus       (u32 rm, u32 wm, u32& rd, u32 wd);
     void csr_rw_sip           (u32 rm, u32 wm, u32& rd, u32 wd);

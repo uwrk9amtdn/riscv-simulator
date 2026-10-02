@@ -1,39 +1,40 @@
 
 #include <hart.h>
+#include <stdexcept>
 
 void hart::decode_system()
 {
     switch (funct3) {
-        case FUNCT3_ECALL_EBREAK_WFI_MRET: {
-            if (rd != 0 || rs1 != 0) {
+        case FUNCT3_SYSTEM_OTHER: {
+            if (rd != 0) {
                 throw trap{trap_cause_t::illegal_instruction_exception, inst};
             }
 
-            switch (funct7) {
-
-                case FUNCT7_ECALL_EBREAK: {
-                    switch (rs2) {
-                        case RS2_ECALL:  return inst_ecall();
-                        case RS2_EBREAK: return inst_ebreak();
-                    }
-                    throw trap{trap_cause_t::illegal_instruction_exception, inst}; break;
-                } break;
-
-                case FUNCT7_WFI: {
-                    switch (rs2) {
-                        case RS2_WFI: return inst_wfi();
-                    }
-                    throw trap{trap_cause_t::illegal_instruction_exception, inst};
-                } break;
-
-                case FUNCT7_MRET: {
-                    switch (rs2) {
-                        case RS2_MRET: return inst_mret();
-                    }
-                    throw trap{trap_cause_t::illegal_instruction_exception, inst}; break;
-                } break;
+            if (get_part(inst, 31, 15) == FUNCT_31_15_SRET) {
+                return inst_sret();
             }
-            throw trap{trap_cause_t::illegal_instruction_exception, inst}; break;
+
+            if (get_part(inst, 31, 15) == FUNCT_31_15_MRET) {
+                return inst_mret();
+            }
+
+            if (get_part(inst, 31, 15) == FUNCT_31_15_WFI) {
+                return inst_wfi();
+            }
+
+            if (get_part(inst, 31, 25) == FUNCT_31_25_SFENCE_VMA) {
+                return inst_sfence_vma();
+            }
+
+            if (get_part(inst, 31, 15) == FUNCT_31_15_ECALL) {
+                return inst_ecall();
+            }
+
+            if (get_part(inst, 31, 15) == FUNCT_31_15_EBREAK) {
+                return inst_ebreak();
+            }
+
+            throw trap{trap_cause_t::illegal_instruction_exception, inst};
 
         } break;
 
@@ -48,11 +49,22 @@ void hart::decode_system()
 }
 
 void hart::inst_ecall() {
-    if (priv == 0b11) { // m mode
-        throw trap{trap_cause_t::environment_call_from_m_mode_exception, 0};
-    } else {
+    if (priv == 0b00) {
         throw trap{trap_cause_t::environment_call_from_u_mode_exception, 0};
     }
+
+    if (priv == 0b01) {
+        throw trap{trap_cause_t::environment_call_from_s_mode_exception, 0};
+    }
+
+    if (priv == 0b11) {
+        throw trap{trap_cause_t::environment_call_from_s_mode_exception, 0};
+    }
+
+    if (priv == 0b10) {
+        throw std::runtime_error("priv cannot be 0b10");
+    }
+
 }
 
 void hart::inst_ebreak() {
@@ -60,10 +72,18 @@ void hart::inst_ebreak() {
 }
 
 void hart::inst_wfi() {
+    // TODO: mstatus.TW
+    if (priv == 0b00) {
+        throw trap{trap_cause_t::illegal_instruction_exception, inst};
+    }
     pc = pc + 4;
 }
 
 void hart::inst_mret() {
+    // TODO: mstatus.MPRV
+    if (priv != 0b11) {
+        throw trap{trap_cause_t::illegal_instruction_exception, inst};
+    }
 
     mstatus.MIE() = mstatus.MPIE();
     mstatus.MPIE() = 0b1;
@@ -75,7 +95,27 @@ void hart::inst_mret() {
 }
 
 void hart::inst_sret() {
+    // TODO: mstatus.TSR
+    // TODO: mstatus.MPRV
+    if (priv == 0b00) {
+        throw trap{trap_cause_t::illegal_instruction_exception, inst};
+    }
+    mstatus.SIE()  = mstatus.SPIE();
+    mstatus.SPIE() = 0b1;
 
+    priv = mstatus.SPP();
+    mstatus.SPP() = 0b0;
+
+    pc = sepc;
+}
+
+void hart::inst_sfence_vma() {
+    // TODO: mstatus.TVM
+
+    if (priv == 0b00) {
+        throw trap{trap_cause_t::illegal_instruction_exception, inst};
+    }
+    pc = pc + 4;
 }
 
 void hart::inst_csrrw() {
@@ -161,6 +201,8 @@ void hart::csr_rw(u32 csr, u32 rm, u32 wm, u32& rd, u32 wd)
         case CSR_MCAUSE:     return csr_rw_mcause     (rm, wm, rd, wd);
         case CSR_MTVAL:      return csr_rw_mtval      (rm, wm, rd, wd);
         case CSR_MIP:        return csr_rw_mip        (rm, wm, rd, wd);
+        case CSR_MEDELEG:    return csr_rw_medeleg    (rm, wm, rd, wd);
+        case CSR_MIDELEG:    return csr_rw_mideleg    (rm, wm, rd, wd);
 
         case CSR_SSTATUS:    return csr_rw_sstatus    (rm, wm, rd, wd);
         case CSR_STVEC:      return csr_rw_stvec      (rm, wm, rd, wd);

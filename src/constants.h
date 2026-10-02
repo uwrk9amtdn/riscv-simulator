@@ -44,6 +44,8 @@ constexpr u32 CSR_MEPC       = 0x341;
 constexpr u32 CSR_MCAUSE     = 0x342;
 constexpr u32 CSR_MTVAL      = 0x343;
 constexpr u32 CSR_MIP        = 0x344;
+constexpr u32 CSR_MEDELEG    = 0x302;
+constexpr u32 CSR_MIDELEG    = 0x303;
 
 constexpr u32 CSR_SSTATUS    = 0x100;
 constexpr u32 CSR_SIE        = 0x104;
@@ -108,16 +110,19 @@ constexpr u32 FUNCT10_DIVU    = 0b0000001101;
 constexpr u32 FUNCT10_REM     = 0b0000001110;
 constexpr u32 FUNCT10_REMU    = 0b0000001111;
 
-constexpr u32 FUNCT7_ECALL_EBREAK = 0b0000000;
-constexpr u32 FUNCT7_WFI          = 0b0001000;
-constexpr u32 FUNCT7_MRET         = 0b0011000;
+constexpr u32 FUNCT_31_15_SRET       = 0x02040;
+constexpr u32 FUNCT_31_15_MRET       = 0x06040;
+constexpr u32 FUNCT_31_15_WFI        = 0x020a0;
+constexpr u32 FUNCT_31_15_ECALL      = 0x00000;
+constexpr u32 FUNCT_31_15_EBREAK     = 0x00020;
+constexpr u32 FUNCT_31_25_SFENCE_VMA = 0x09;
 
 constexpr u32 RS2_ECALL  = 0b00000;
 constexpr u32 RS2_EBREAK = 0b00001;
 constexpr u32 RS2_WFI    = 0b00101;
 constexpr u32 RS2_MRET   = 0b00010;
 
-constexpr u32 FUNCT3_ECALL_EBREAK_WFI_MRET = 0b000;
+constexpr u32 FUNCT3_SYSTEM_OTHER          = 0b000;
 constexpr u32 FUNCT3_CSRRW                 = 0b001;
 constexpr u32 FUNCT3_CSRRS                 = 0b010;
 constexpr u32 FUNCT3_CSRRC                 = 0b011;

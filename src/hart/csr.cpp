@@ -54,12 +54,14 @@ void hart::csr_rw_mtvec (u32 rm, u32 wm, u32& rd, u32 wd) {
 
 void hart::csr_rw_mip (u32 rm, u32 wm, u32& rd, u32 wd) {
     rd = mip & rm;
+    mip = set_with_mask(mip, wd, wm);
+    mip &= 0x222; // SSIP, STIP, SEIP
 }
 
 void hart::csr_rw_mie (u32 rm, u32 wm, u32& rd, u32 wd) {
     rd = mie & rm;
     mie = set_with_mask(mie, wd, wm);
-    mie &= 0x888;
+    mie &= 0xaaa; // SSIE, MSIE, STIE, MTIE, SEIE, MEIE
 }
 
 void hart::csr_rw_mscratch (u32 rm, u32 wm, u32& rd, u32 wd) {
@@ -83,6 +85,18 @@ void hart::csr_rw_mtval (u32 rm, u32 wm, u32& rd, u32 wd) {
     mtval = set_with_mask(mtval, wd, wm);
 }
 
+void hart::csr_rw_medeleg (u32 rm, u32 wm, u32& rd, u32 wd) {
+    rd = medeleg & rm;
+    medeleg = set_with_mask(medeleg, wd, wm);
+    medeleg &= 0xb3ff; // ecall from m mode is not delegateable
+}
+
+void hart::csr_rw_mideleg (u32 rm, u32 wm, u32& rd, u32 wd) {
+    rd = mideleg & rm;
+    mideleg = set_with_mask(mideleg, wd, wm);
+    mideleg &= 0x222; // M mode interrupts are not delegateable
+}
+
 void hart::csr_rw_sstatus (u32 rm, u32 wm, u32& rd, u32 wd) {
     u32 mask = 0x0c0122;
     rd = (mstatus & rm & mask);
@@ -94,11 +108,15 @@ void hart::csr_rw_sstatus (u32 rm, u32 wm, u32& rd, u32 wd) {
 }
 
 void hart::csr_rw_sip (u32 rm, u32 wm, u32& rd, u32 wd) {
-
+    rd = mip & rm & 0x222; // SSIP, STIP, SEIP
+    mip = set_with_mask(mip, wd, wm);
+    mip &= 0x222; // SSIP, STIP, SEIP
 }
 
 void hart::csr_rw_sie (u32 rm, u32 wm, u32& rd, u32 wd) {
-
+    rd = mie & rm & 0x222;
+    mie = set_with_mask(mie, wd, wm);
+    mie &= 0x222; // SSIE, STIE, SEIE
 }
 
 void hart::csr_rw_stvec (u32 rm, u32 wm, u32& rd, u32 wd) {
@@ -129,6 +147,7 @@ void hart::csr_rw_stval (u32 rm, u32 wm, u32& rd, u32 wd) {
 }
 
 void hart::csr_rw_satp (u32 rm, u32 wm, u32& rd, u32 wd) {
+    // TODO: mstatus.TVM
     rd = satp & rm;
     satp = set_with_mask(satp, wd, wm);
     satp.field<21,20>() = 0b00;

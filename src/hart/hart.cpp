@@ -15,40 +15,36 @@ void hart::step()
 {
     try {
 
-        if (mip.MEIP() && mie.MEIE()) {
-            throw trap{trap_cause_t::machine_external_interrupt, 0};
-        }
+        {
+            u32 mp = mip & mie & ~mideleg;
+            u32 sp = mip & mie & mideleg;
 
-        if (mip.SEIP() && mie.SEIE() && !(priv == 0b11 && medeleg.field<)) {
-            if (priv == 0b11)
-            throw trap{trap_cause_t::supervisor_external_interrupt, 0};
-        }
-
-        switch (priv) {
-            case 0b00: // user
-            break;
-            case 0b01: // supervisor
-
-            break;
-            case 0b11: // machine
-
-            break;
-            default:
-
-            break;
-        }
-
-        if (mstatus.MIE()) {
-            if (mip.MEIP() && mie.MEIE()) {
-                throw trap{trap_cause_t::machine_external_interrupt, 0};
+            switch(priv) {
+                case 0b11: {
+                    if (!mstatus.MIE()) {
+                        mp = 0;
+                    }
+                    sp = 0;
+                    break;
+                }
+                case 0b01: {
+                    if (!mstatus.SIE()) {
+                        sp = 0;
+                    }
+                    break;
+                }
+                case 0b00: {
+                    break;
+                }
             }
 
-            if (mip.MSIP() && mie.MSIE()) {
-                throw trap{trap_cause_t::machine_software_interrupt, 0};
-            }
+            if (mp | sp) {
+                // TODO: interrupt priority is wrong, ignored for now
+                u32 i = 31 - __builtin_clz(mp | sp);
 
-            if (mip.MTIP() && mie.MTIE()) {
-                throw trap{trap_cause_t::machine_timer_interrupt, 0};
+                u32 c = set_bit(i, 31);
+
+                throw trap{static_cast<trap_cause_t>(c), 0};
             }
         }
 
@@ -83,29 +79,64 @@ void hart::step()
 
     } catch (trap t) {
 
-        if (priv == 0b00 || priv == 0b01) {
+        u32 cause;
+        bool intr;
 
-        } else {
+        cause = static_cast<u32>(t.cause);
+        intr = get_bit(cause, 31);
+        cause = get_part(cause, 4, 0);
 
+        bool delegate = false;
+
+        if (priv != 0b11) {
+            if (intr) {
+                if (get_bit(mideleg, cause)) {
+                    delegate = true;
+                }
+            } else {
+                if (get_bit(medeleg, cause)) {
+                    delegate = true;
+                }
+            }
         }
 
-        // TODO: medeleg
-        mcause = static_cast<u32>(t.cause);
-        mtval = t.value;
+        if (delegate) {
+            scause = static_cast<u32>(t.cause);
+            stval = t.value;
 
-        mstatus.MPIE() = mstatus.MIE();
-        mstatus.MIE() = 0b0;
-        mstatus.MPP() = priv;
+            mstatus.SPIE() = mstatus.SIE();
+            mstatus.SIE() = 0b0;
+            mstatus.SPP() = priv;
 
-        priv = 0b11;
+            priv = 0b01;
 
-        mepc = pc;
+            sepc = pc;
 
-        if (mtvec & 0x1) {
-            pc = (mtvec & ~create_mask(1, 0)) + (get_part(mcause, 30, 0) * 4);
+            if (stvec.MODE() == 0b01 && intr) {
+                pc = (stvec.BASE() + cause) * 4;
+            } else {
+                pc = stvec.BASE() * 4;
+            }
+
         } else {
-            pc = mtvec & ~create_mask(1, 0);
+            mcause = static_cast<u32>(t.cause);
+            mtval = t.value;
+
+            mstatus.MPIE() = mstatus.MIE();
+            mstatus.MIE() = 0b0;
+            mstatus.MPP() = priv;
+
+            priv = 0b11;
+
+            mepc = pc;
+
+            if (mtvec.MODE() == 0b01 && intr) {
+                pc = (mtvec.BASE() + cause) * 4;
+            } else {
+                pc = mtvec.BASE() * 4;
+            }
         }
+
     }
 
     regs[0] = 0;
@@ -184,7 +215,7 @@ void hart::sv32_ptw(u32 va, u32& pa, access_type_t access_type) {
             throw trap{access_fault_exception, va};
         }
 
-        u32 v = get_part(pte, 0, 0);
+        u32 v = get_bit(pte, 0);
         u32 xwr = get_part(pte, 3, 1);
 
         if (v == 0 || xwr == 0b010 || xwr == 0b110) {
@@ -236,13 +267,13 @@ void hart::sv32_ptw(u32 va, u32& pa, access_type_t access_type) {
 
         bool store = false;
 
-        if (get_part(pte, 6, 6) == 0b0) {
+        if (get_bit(pte, 6) == 0b0) {
             pte = set_bit(pte, 6);
             store = true;
         }
 
 
-        if (access_type == access_type_t::w && get_part(pte, 7, 7) == 0b0) {
+        if (access_type == access_type_t::w && get_bit(pte, 7) == 0b0) {
             pte = set_bit(pte, 7);
             store = true;
         }
@@ -275,7 +306,7 @@ void hart::load(u32 addr, u32 len, u8* data, access_type_t access_type) {
 
     // TODO: implement MPRV bit
     // disabled for now
-    if (0 && get_part(priv, 1, 1) == 0b0 && satp.MODE() == 0b1) {
+    if (0 && get_bit(priv, 1) == 0b0 && satp.MODE() == 0b1) {
         u32 pa;
         sv32_ptw(addr, pa, access_type);
         if (!mmio_->load(pa, len, data)) {
@@ -292,7 +323,7 @@ void hart::store(u32 addr, u32 len, const u8* data, access_type_t access_type) {
     trap_cause_t access_fault_exception = access_type_to_access_fault_exception(access_type);
     // TODO: implement MPRV bit
     // disabled for now
-    if (0 && get_part(priv, 1, 1) == 0b0 && satp.MODE() == 0b1) {
+    if (0 && get_bit(priv, 1) == 0b0 && satp.MODE() == 0b1) {
         u32 pa;
         sv32_ptw(addr, pa, access_type);
         if (!mmio_->store(pa, len, data)) {

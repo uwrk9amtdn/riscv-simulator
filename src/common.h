@@ -16,6 +16,11 @@ typedef int8_t i8;
     return (in << (31 - ileft)) >> (31 - ileft + iright) << oright;
 }
 
+[[nodiscard]] constexpr u32 get_bit(u32 in, u32 i)
+{
+    return get_part(in, i, i);
+}
+
 [[nodiscard]] constexpr i32 get_part_signed(u32 in, u32 ileft, u32 iright, u32 oright = 0)
 {
     return ((i32)(in << (31 - ileft)) >> (31 - ileft + iright)) << oright;

@@ -4,9 +4,6 @@
 #include "mmio.h"
 #include "constants.h"
 
-// TODO: implement sret, sfence_vma, medeleg, mideleg.
-// TODO: instruction priv check
-
 class hart {
 
 public:
@@ -123,6 +120,15 @@ public:
         CSR_FIELD   (MODE, 31)
     };
 
+    struct csr_tvec : csr {
+        using csr::operator=;
+        using csr::operator u32;
+
+        CSR_FIELD_R (BASE , 31, 2)
+
+        CSR_FIELD_R (MODE, 1, 0)
+    };
+
     #undef CSR_FIELD
     #undef CSR_FIELD_R
 
@@ -134,7 +140,7 @@ public:
     csr         mhartid;
     csr_mstatus mstatus;
     csr         mstatush;
-    csr         mtvec;
+    csr_tvec    mtvec;
     csr         medeleg;
     csr         mideleg;
     csr_mip     mip;
@@ -145,7 +151,7 @@ public:
     csr         mtval;
     csr         mconfigptr;
 
-    csr         stvec;
+    csr_tvec    stvec;
     csr         sscratch;
     csr         sepc;
     csr         scause;

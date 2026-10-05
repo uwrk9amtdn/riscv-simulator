@@ -2,6 +2,10 @@
 
 void hart::decode_jalr()
 {
+    if (funct3 != 0b000) {
+        throw trap{trap_cause_t::illegal_instruction_exception, inst};
+    }
+
     inst_jalr();
 }
 

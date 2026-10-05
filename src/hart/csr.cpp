@@ -32,8 +32,8 @@ void hart::csr_rw_mstatus (u32 rm, u32 wm, u32& rd, u32 wd) {
         throw std::runtime_error("not implemented yet");
     }
 
-    // 00: user mode, 11: machine mode
-    if (mstatus.MPP()) { // mode 01 and 10 is not supported, force 11
+    // 00: user, 01: supervisor, 11: machine
+    if (mstatus.MPP() == 0b10) { // 10 is not supported, force 11
         mstatus.MPP() = 0b11;
     }
 }
@@ -54,14 +54,12 @@ void hart::csr_rw_mtvec (u32 rm, u32 wm, u32& rd, u32 wd) {
 
 void hart::csr_rw_mip (u32 rm, u32 wm, u32& rd, u32 wd) {
     rd = mip & rm;
-    mip = set_with_mask(mip, wd, wm);
-    mip &= 0x222; // SSIP, STIP, SEIP
+    mip = set_with_mask(mip, wd, wm & 0x222); // SSIP, STIP, SEIP
 }
 
 void hart::csr_rw_mie (u32 rm, u32 wm, u32& rd, u32 wd) {
     rd = mie & rm;
-    mie = set_with_mask(mie, wd, wm);
-    mie &= 0xaaa; // SSIE, MSIE, STIE, MTIE, SEIE, MEIE
+    mie = set_with_mask(mie, wd, wm & 0xaaa); // SSIE, MSIE, STIE, MTIE, SEIE, MEIE
 }
 
 void hart::csr_rw_mscratch (u32 rm, u32 wm, u32& rd, u32 wd) {
@@ -108,15 +106,15 @@ void hart::csr_rw_sstatus (u32 rm, u32 wm, u32& rd, u32 wd) {
 }
 
 void hart::csr_rw_sip (u32 rm, u32 wm, u32& rd, u32 wd) {
-    rd = mip & rm & 0x222; // SSIP, STIP, SEIP
-    mip = set_with_mask(mip, wd, wm);
-    mip &= 0x222; // SSIP, STIP, SEIP
+    // only delegated
+    rd = mip & rm & mideleg;
+    mip = set_with_mask(mip, wd, wm & mideleg);
 }
 
 void hart::csr_rw_sie (u32 rm, u32 wm, u32& rd, u32 wd) {
-    rd = mie & rm & 0x222;
-    mie = set_with_mask(mie, wd, wm);
-    mie &= 0x222; // SSIE, STIE, SEIE
+    // only delegated
+    rd = mie & rm & mideleg;
+    mie = set_with_mask(mie, wd, wm & mideleg);
 }
 
 void hart::csr_rw_stvec (u32 rm, u32 wm, u32& rd, u32 wd) {

@@ -27,6 +27,11 @@ void hart::inst_sh() {
     u32 data;
 
     addr = regs[rs1] + get_part_signed(inst, 31, 25, 5) + get_part(inst, 11, 7);
+
+    if (addr & 0x01) {
+        throw trap{trap_cause_t::store_amo_address_misaligned_exception, addr};
+    }
+
     data = regs[rs2];
     store(addr, 2, (u8*)&data);
 
@@ -38,6 +43,11 @@ void hart::inst_sw() {
     u32 data;
 
     addr = regs[rs1] + get_part_signed(inst, 31, 25, 5) + get_part(inst, 11, 7);
+
+    if (addr & 0x03) {
+        throw trap{trap_cause_t::store_amo_address_misaligned_exception, addr};
+    }
+
     data = regs[rs2];
     store(addr, 4, (u8*)&data);
 

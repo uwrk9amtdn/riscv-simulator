@@ -32,6 +32,8 @@ void hart::decode_amo()
 void hart::inst_lr_w() {
     u32 addr;
     u32 ldata;
+    u32 pa;
+
     if (rs2 != 0) {
         throw trap{trap_cause_t::illegal_instruction_exception, inst};
     }
@@ -42,12 +44,16 @@ void hart::inst_lr_w() {
         throw trap{trap_cause_t::load_address_misaligned_exception, addr};
     }
 
-    load(addr, 4, (u8*)&ldata, access_type_t::w);
+    pa = resolve_addr(addr, access_type_t::r);
 
-    regs[rd] = ldata;
+    if (!mmio_->load(pa, 4, (u8*)&ldata)) {
+        throw trap{trap_cause_t::load_access_fault_exception, addr};
+    }
 
     reservation_set = true;
-    reserved_addr = addr;
+    reserved_addr = pa;
+
+    regs[rd] = ldata;
 
     pc = pc + 4;
 }
@@ -55,6 +61,7 @@ void hart::inst_lr_w() {
 void hart::inst_sc_w() {
     u32 addr;
     u32 sdata;
+    u32 pa;
 
     addr = regs[rs1];
     sdata = regs[rs2];
@@ -63,14 +70,18 @@ void hart::inst_sc_w() {
         throw trap{trap_cause_t::store_amo_address_misaligned_exception, addr};
     }
 
-    if (reservation_set && reserved_addr == addr) {
-        store(addr, 4, (u8*)&sdata);
+    pa = resolve_addr(addr, access_type_t::w);
 
+    if (reservation_set && reserved_addr == pa) {
+        if (!mmio_->store(pa, 4, (u8*)&sdata)) {
+            throw trap{trap_cause_t::store_amo_access_fault_exception, addr};
+        }
         regs[rd] = 0;
-        reservation_set = false;
     } else {
         regs[rd] = 1;
     }
+
+    reservation_set = false;
 
     pc = pc + 4;
 }

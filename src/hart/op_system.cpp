@@ -58,7 +58,7 @@ void hart::inst_ecall() {
     }
 
     if (priv == 0b11) {
-        throw trap{trap_cause_t::environment_call_from_s_mode_exception, 0};
+        throw trap{trap_cause_t::environment_call_from_m_mode_exception, 0};
     }
 
     if (priv == 0b10) {
@@ -117,6 +117,8 @@ void hart::inst_sfence_vma() {
     }
     pc = pc + 4;
 }
+
+// TODO: csrrw to read only csr's should trap. csrrs and csrrc to read only csr's should trap if rs1 is not x0, even if the value of regs[rs1] is 0
 
 void hart::inst_csrrw() {
     u32 csr = get_part(inst, 31, 20);

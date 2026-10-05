@@ -192,7 +192,7 @@ hart::trap_cause_t hart::access_type_to_page_fault_exception(access_type_t acces
     return trap_cause_t{};
 }
 
-void hart::sv32_ptw(u32 va, u32& pa, access_type_t access_type) {
+u32 hart::sv32_ptw(u32 va, access_type_t access_type) {
     u32 pte;
     u32 ppa;
     u32 vpn[2];
@@ -230,9 +230,6 @@ void hart::sv32_ptw(u32 va, u32& pa, access_type_t access_type) {
 
         if (xwr == 0b000) {
             // TODO: U, A, D bits must be zero in non leaf PTEs
-            if (i == 0) {
-                throw trap{page_fault_exception, va};
-            }
             ppa = get_part(pte, 29, 10, 12);
             continue;
         }
@@ -285,6 +282,8 @@ void hart::sv32_ptw(u32 va, u32& pa, access_type_t access_type) {
             }
         }
 
+        u32 pa;
+
         switch (i) {
             case 1:
                 pa = get_part(pte, 29, 20, 22) | get_part(va, 21, 0);
@@ -297,41 +296,39 @@ void hart::sv32_ptw(u32 va, u32& pa, access_type_t access_type) {
                 break;
         }
 
-        return;
+        return pa;
+    }
+
+    throw trap{page_fault_exception, va};
+}
+
+u32 hart::resolve_addr(u32 addr, access_type_t access_type) {
+    // TODO: implement PMA/PMP checks
+    // TODO: implement MPRV bit
+
+    if (get_bit(priv, 1) == 0b0 && satp.MODE() == 0b1) {
+        return sv32_ptw(addr, access_type);
+    } else {
+        return addr;
     }
 }
 
 void hart::load(u32 addr, u32 len, u8* data, access_type_t access_type) {
     trap_cause_t access_fault_exception = access_type_to_access_fault_exception(access_type);
 
-    // TODO: implement MPRV bit
-    // disabled for now
-    if (0 && get_bit(priv, 1) == 0b0 && satp.MODE() == 0b1) {
-        u32 pa;
-        sv32_ptw(addr, pa, access_type);
-        if (!mmio_->load(pa, len, data)) {
-            throw trap{access_fault_exception, addr};
-        }
-    } else {
-        if (!mmio_->load(addr, len, data)) {
-            throw trap{access_fault_exception, addr};
-        }
+    u32 pa = resolve_addr(addr, access_type);
+
+    if (!mmio_->load(pa, len, data)) {
+        throw trap{access_fault_exception, addr};
     }
 }
 
 void hart::store(u32 addr, u32 len, const u8* data, access_type_t access_type) {
     trap_cause_t access_fault_exception = access_type_to_access_fault_exception(access_type);
-    // TODO: implement MPRV bit
-    // disabled for now
-    if (0 && get_bit(priv, 1) == 0b0 && satp.MODE() == 0b1) {
-        u32 pa;
-        sv32_ptw(addr, pa, access_type);
-        if (!mmio_->store(pa, len, data)) {
-            throw trap{access_fault_exception, addr};
-        }
-    } else {
-        if (!mmio_->store(addr, len, data)) {
-            throw trap{access_fault_exception, addr};
-        }
+
+    u32 pa = resolve_addr(addr, access_type);
+
+    if (!mmio_->store(pa, len, data)) {
+        throw trap{access_fault_exception, addr};
     }
 }

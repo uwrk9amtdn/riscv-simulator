@@ -30,6 +30,10 @@ void hart::inst_lh() {
 
     addr = regs[rs1] + get_part_signed(inst, 31, 20);
 
+    if (addr & 0x01) {
+        throw trap{trap_cause_t::load_address_misaligned_exception, addr};
+    }
+
     load(addr, 2, (u8*)&di16);
     data = di16;
 
@@ -42,6 +46,10 @@ void hart::inst_lw() {
     u32 data;
 
     addr = regs[rs1] + get_part_signed(inst, 31, 20);
+
+    if (addr & 0x03) {
+        throw trap{trap_cause_t::load_address_misaligned_exception, addr};
+    }
 
     load(addr, 4, (u8*)&data);
 
@@ -69,6 +77,10 @@ void hart::inst_lhu() {
     u16 du16;
 
     addr = regs[rs1] + get_part_signed(inst, 31, 20);
+
+    if (addr & 0x01) {
+        throw trap{trap_cause_t::load_address_misaligned_exception, addr};
+    }
 
     load(addr, 2, (u8*)&du16);
     data = du16;

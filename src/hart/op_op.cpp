@@ -75,7 +75,7 @@ void hart::inst_and() {
 }
 
 void hart::inst_mul() {
-    regs[rd] = (i32)regs[rs1] * (i32)regs[rs2];
+    regs[rd] = regs[rs1] * regs[rs2];
     pc = pc + 4;
 }
 

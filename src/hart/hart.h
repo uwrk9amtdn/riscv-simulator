@@ -204,7 +204,9 @@ private:
     trap_cause_t access_type_to_access_fault_exception(access_type_t access_type);
     trap_cause_t access_type_to_page_fault_exception(access_type_t access_type);
 
-    void sv32_ptw(u32 va, u32& pa, access_type_t access_type);
+    u32 sv32_ptw(u32 va, access_type_t access_type);
+
+    u32 resolve_addr(u32 addr, access_type_t access_type);
 
     void load(u32 addr, u32 len, u8* data, access_type_t access_type = access_type_t::r);
     void store(u32 addr, u32 len, const u8* data, access_type_t access_type = access_type_t::w);

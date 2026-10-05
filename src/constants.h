@@ -46,6 +46,7 @@ constexpr u32 CSR_MTVAL      = 0x343;
 constexpr u32 CSR_MIP        = 0x344;
 constexpr u32 CSR_MEDELEG    = 0x302;
 constexpr u32 CSR_MIDELEG    = 0x303;
+constexpr u32 CSR_MCOUNTEREN = 0x306;
 
 constexpr u32 CSR_SSTATUS    = 0x100;
 constexpr u32 CSR_SIE        = 0x104;
@@ -56,6 +57,7 @@ constexpr u32 CSR_SCAUSE     = 0x142;
 constexpr u32 CSR_STVAL      = 0x143;
 constexpr u32 CSR_SIP        = 0x144;
 constexpr u32 CSR_SATP       = 0x180;
+constexpr u32 CSR_SCOUNTEREN = 0x106;
 
 // branch
 constexpr u32 FUNCT3_BEQ  = 0b000;

@@ -53,7 +53,8 @@ void hart::csr_rw_mtvec (u32 rm, u32 wm, u32& rd, u32 wd) {
 }
 
 void hart::csr_rw_mip (u32 rm, u32 wm, u32& rd, u32 wd) {
-    rd = mip & rm;
+    u32 mip_ = mip | (seip ? 1 << 9 : 0);
+    rd = mip_ & rm;
     mip = set_with_mask(mip, wd, wm & 0x222); // SSIP, STIP, SEIP
 }
 
@@ -95,6 +96,10 @@ void hart::csr_rw_mideleg (u32 rm, u32 wm, u32& rd, u32 wd) {
     mideleg &= 0x222; // M mode interrupts are not delegateable
 }
 
+void hart::csr_rw_mcounteren (u32 rm, u32 wm, u32& rd, u32 wd) {
+    throw std::runtime_error("not implemented yet");
+}
+
 void hart::csr_rw_sstatus (u32 rm, u32 wm, u32& rd, u32 wd) {
     u32 mask = 0x0c0122;
     rd = (mstatus & rm & mask);
@@ -107,8 +112,9 @@ void hart::csr_rw_sstatus (u32 rm, u32 wm, u32& rd, u32 wd) {
 
 void hart::csr_rw_sip (u32 rm, u32 wm, u32& rd, u32 wd) {
     // only delegated
-    rd = mip & rm & mideleg;
-    mip = set_with_mask(mip, wd, wm & mideleg);
+    u32 mip_ = mip | (seip ? 1 << 9 : 0);
+    rd = mip_ & rm & mideleg;
+    mip = set_with_mask(mip, wd, wm & mideleg & 0x2); // only ssip is writable if delegated
 }
 
 void hart::csr_rw_sie (u32 rm, u32 wm, u32& rd, u32 wd) {
@@ -149,4 +155,8 @@ void hart::csr_rw_satp (u32 rm, u32 wm, u32& rd, u32 wd) {
     rd = satp & rm;
     satp = set_with_mask(satp, wd, wm);
     satp.field<21,20>() = 0b00;
+}
+
+void hart::csr_rw_scounteren (u32 rm, u32 wm, u32& rd, u32 wd) {
+    throw std::runtime_error("not implemented yet");
 }

@@ -119,6 +119,7 @@ void hart::inst_sfence_vma() {
 }
 
 // TODO: csrrw to read only csr's should trap. csrrs and csrrc to read only csr's should trap if rs1 is not x0, even if the value of regs[rs1] is 0
+// TODO: csrrw/csrrwi with rd=x0 must not read the csr and cause read side effects. Currently there are no read side effects.
 
 void hart::inst_csrrw() {
     u32 csr = get_part(inst, 31, 20);
@@ -205,6 +206,7 @@ void hart::csr_rw(u32 csr, u32 rm, u32 wm, u32& rd, u32 wd)
         case CSR_MIP:        return csr_rw_mip        (rm, wm, rd, wd);
         case CSR_MEDELEG:    return csr_rw_medeleg    (rm, wm, rd, wd);
         case CSR_MIDELEG:    return csr_rw_mideleg    (rm, wm, rd, wd);
+        case CSR_MCOUNTEREN: return csr_rw_mcounteren (rm, wm, rd, wd);
 
         case CSR_SSTATUS:    return csr_rw_sstatus    (rm, wm, rd, wd);
         case CSR_STVEC:      return csr_rw_stvec      (rm, wm, rd, wd);
@@ -215,6 +217,7 @@ void hart::csr_rw(u32 csr, u32 rm, u32 wm, u32& rd, u32 wd)
         case CSR_SCAUSE:     return csr_rw_scause     (rm, wm, rd, wd);
         case CSR_STVAL:      return csr_rw_stval      (rm, wm, rd, wd);
         case CSR_SATP:       return csr_rw_satp       (rm, wm, rd, wd);
+        case CSR_SCOUNTEREN: return csr_rw_scounteren (rm, wm, rd, wd);
 
         default: throw trap{trap_cause_t::illegal_instruction_exception, inst};
     };

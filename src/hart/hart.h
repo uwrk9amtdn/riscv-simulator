@@ -211,6 +211,8 @@ private:
     void load(u32 addr, u32 len, u8* data, access_type_t access_type = access_type_t::r);
     void store(u32 addr, u32 len, const u8* data, access_type_t access_type = access_type_t::w);
 
+    bool seip = false;
+
     ////
 
     u32 opcode;
@@ -254,6 +256,7 @@ private:
     void csr_rw_mtval         (u32 rm, u32 wm, u32& rd, u32 wd);
     void csr_rw_medeleg       (u32 rm, u32 wm, u32& rd, u32 wd);
     void csr_rw_mideleg       (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_mcounteren    (u32 rm, u32 wm, u32& rd, u32 wd);
 
     void csr_rw_sstatus       (u32 rm, u32 wm, u32& rd, u32 wd);
     void csr_rw_sip           (u32 rm, u32 wm, u32& rd, u32 wd);
@@ -264,6 +267,7 @@ private:
     void csr_rw_scause        (u32 rm, u32 wm, u32& rd, u32 wd);
     void csr_rw_stval         (u32 rm, u32 wm, u32& rd, u32 wd);
     void csr_rw_satp          (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_scounteren    (u32 rm, u32 wm, u32& rd, u32 wd);
 
 private:
     void inst_lui       ();

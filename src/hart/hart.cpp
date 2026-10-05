@@ -16,8 +16,9 @@ void hart::step()
     try {
 
         {
-            u32 mp = mip & mie & ~mideleg;
-            u32 sp = mip & mie & mideleg;
+            u32 mip_ = mip | (seip ? 1 << 9 : 0);
+            u32 mp = mip_ & mie & ~mideleg;
+            u32 sp = mip_ & mie & mideleg;
 
             switch(priv) {
                 case 0b11: {
@@ -39,10 +40,18 @@ void hart::step()
             }
 
             if (mp | sp) {
-                // TODO: interrupt priority is wrong, ignored for now
-                u32 i = 31 - __builtin_clz(mp | sp);
 
-                u32 c = set_bit(i, 31);
+                u32 order [] = {11, 3, 7, 9, 1, 5};
+                u32 c;
+
+                for (int i = 0; i < 6; i++) {
+                    if (get_bit(mp | sp, order[i])) {
+                        c = order[i];
+                        break;
+                    }
+                }
+
+                c = set_bit(c, 31);
 
                 throw trap{static_cast<trap_cause_t>(c), 0};
             }
@@ -149,7 +158,7 @@ void hart::set_meip(bool level)
 
 void hart::set_seip(bool level)
 {
-    mip.SEIP() = level;
+    seip = level;
 }
 
 void hart::set_mtip(bool level)

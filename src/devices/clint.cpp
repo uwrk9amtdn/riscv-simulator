@@ -21,7 +21,6 @@ clint::clint(std::vector<hart*> harts, float tick_freq)
 
 bool clint::load(u32 addr, u32 len, u8* data)
 {
-    std::lock_guard lock(m);
 
     u32 val32;
     u64 val64;
@@ -104,7 +103,6 @@ bool clint::load(u32 addr, u32 len, u8* data)
 
 bool clint::store(u32 addr, u32 len, const u8* data)
 {
-    std::lock_guard lock(m);
 
     u32 val32;
     u64 val64;
@@ -202,7 +200,6 @@ u32 clint::size() const
 
 void clint::tick()
 {
-    std::lock_guard lock(m);
 
     mtime += MTIME_FREQ / tick_freq;
     for (u32 i = 0; i < harts.size(); i++) {

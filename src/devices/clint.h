@@ -4,7 +4,6 @@
 #include "mmio_device.h"
 #include "hart.h"
 #include <vector>
-#include <mutex>
 
 class clint : public mmio_device {
 public:
@@ -25,6 +24,4 @@ private:
     std::vector<hart*> harts;
 
     float tick_freq;
-
-    std::mutex m;
 };

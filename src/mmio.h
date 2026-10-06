@@ -3,7 +3,6 @@
 #include "common.h"
 #include "mmio_device.h"
 #include <vector>
-#include <memory>
 
 class mmio {
 public:

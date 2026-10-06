@@ -173,9 +173,10 @@ bool plic::store(u32 addr, u32 len, const u8* data)
     return false;
 }
 
-u32 plic::size() const
+u64 plic::size() const
 {
-    return END_ADDRESS;
+    // return END_ADDRESS;
+    return CONTEXT_BASE + context.size() * 2^12;
 }
 
 void plic::tick()

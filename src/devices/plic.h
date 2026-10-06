@@ -50,7 +50,7 @@ public:
 
     bool load(u32 addr, u32 len, u8* data) override;
     bool store(u32 addr, u32 len, const u8* data) override;
-    u32 size() const override;
+    u64 size() const override;
     void tick() override;
     ~plic() override;
 

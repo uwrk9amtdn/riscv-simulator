@@ -193,7 +193,7 @@ bool clint::store(u32 addr, u32 len, const u8* data)
     return false;
 }
 
-u32 clint::size() const
+u64 clint::size() const
 {
     return 0xc000;
 }

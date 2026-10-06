@@ -138,8 +138,10 @@ int main(int argc, char** argv)
     int instr_per_second = 100000000;
     int instr_per_tick = 1000;
 
-    mmio mmio0(4);
-    hart hart0(&mmio0, 0, 0x80000000);
+    mmio mmap(28, 4);
+    mmio prpl(24, 4);
+
+    hart hart0(&mmap, 0, 0x80000000);
 
     ram ram0(128 * 1024 * 1024);
 
@@ -150,10 +152,14 @@ int main(int argc, char** argv)
 
     uart uart0(0, &plic0, 1);
 
-    mmio0.add_device(&ram0, 8);
-    mmio0.add_device(&plic0, 3);
-    mmio0.add_device(&clint0, 2);
-    mmio0.add_device(&uart0, 1);
+    // TODO: add devices to memory map using base addresses. Create mmio tree automatically based on the addresses
+
+    mmap.add_device(&ram0, 8);  // 0x8000_0000
+    mmap.add_device(&prpl, 0);
+
+    prpl.add_device(&uart0, 1);  // 0x0100_0000
+    prpl.add_device(&clint0, 2); // 0x0200_0000
+    prpl.add_device(&plic0, 3);  // 0x0300_0000
 
     u32 kernel_start = 0x80000000;
     u32 initrd_start = 0x86000000;
@@ -163,7 +169,7 @@ int main(int argc, char** argv)
     if (kernel) {
         auto f = load_file(kernel);
 
-        bool ret = mmio0.store(kernel_start, f.size(), (u8*)&f[0]);
+        bool ret = mmap.store(kernel_start, f.size(), (u8*)&f[0]);
         if (ret == false) {
             throw std::runtime_error("could not write kernel to ram");
         }
@@ -175,7 +181,7 @@ int main(int argc, char** argv)
         }
         auto f = load_file(initrd);
 
-        bool ret = mmio0.store(initrd_start, f.size(), (u8*)&f[0]);
+        bool ret = mmap.store(initrd_start, f.size(), (u8*)&f[0]);
         if (ret == false) {
             throw std::runtime_error("could not write initrd to ram");
         }
@@ -197,7 +203,7 @@ int main(int argc, char** argv)
             initrd_end = 0;
         }
         patch_fdt(f, initrd_start, initrd_end, bootargs);
-        bool ret = mmio0.store(dtb_start, f.size(), (u8*)&f[0]);
+        bool ret = mmap.store(dtb_start, f.size(), (u8*)&f[0]);
 
         if (ret == false) {
             throw std::runtime_error("could not write dtb to ram");
@@ -212,6 +218,6 @@ int main(int argc, char** argv)
         for (int i = 0; i < instr_per_tick; i++) {
             hart0.step();
         }
-        mmio0.tick();
+        mmap.tick();
     }
 }

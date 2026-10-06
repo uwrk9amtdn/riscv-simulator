@@ -292,7 +292,7 @@ bool uart::store(u32 addr, u32 len, const u8* data)
     return true;
 }
 
-u32 uart::size() const
+u64 uart::size() const
 {
     return 8;
 }

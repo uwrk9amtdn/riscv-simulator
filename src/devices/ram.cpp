@@ -37,7 +37,7 @@ bool ram::store(u32 addr, u32 len, const u8* data)
     return true;
 }
 
-u32 ram::size() const
+u64 ram::size() const
 {
     return size_;
 }

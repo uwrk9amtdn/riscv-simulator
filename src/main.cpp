@@ -15,9 +15,6 @@
 #include <getopt.h>
 #include <libfdt.h>
 
-#include <chrono>
-#include <thread>
-
 // TODO: disable ctrl+c
 
 std::vector<u8> load_file(std::string file)
@@ -138,7 +135,8 @@ int main(int argc, char** argv)
 
     parse_cmdline(argc, argv, &kernel, &initrd, &dtb, &append);
 
-    float mmio_tick_rate = 10000;
+    int instr_per_second = 100000000;
+    int instr_per_tick = 1000;
 
     mmio mmio0(4);
     hart hart0(&mmio0, 0, 0x80000000);
@@ -148,7 +146,7 @@ int main(int argc, char** argv)
     machine_context hart0_machine_context(&hart0);
     plic plic0({&hart0_machine_context}, 1);
 
-    clint clint0({&hart0}, mmio_tick_rate);
+    clint clint0({&hart0}, (float)instr_per_second / instr_per_tick);
 
     uart uart0(0, &plic0, 1);
 
@@ -210,24 +208,10 @@ int main(int argc, char** argv)
     hart0.regs[11] = dtb_start;
     hart0.pc = kernel_start;
 
-    bool stop_t = false;
-    auto t = [&]() {
-        using namespace std::chrono;
-        auto interval = microseconds(int(1000000.0 / mmio_tick_rate));
-        auto t = high_resolution_clock::now();
-        while (!stop_t) {
-            t += interval;
-            mmio0.tick();
-            std::this_thread::sleep_until(t);
-        }
-    };
-
-    std::thread mmio_tick_thread(t);
-
     while (1) {
-        hart0.step();
+        for (int i = 0; i < instr_per_tick; i++) {
+            hart0.step();
+        }
+        mmio0.tick();
     }
-
-    stop_t = true;
-    mmio_tick_thread.join();
 }

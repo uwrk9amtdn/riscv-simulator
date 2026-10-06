@@ -153,6 +153,7 @@ int main(int argc, char** argv)
     uart uart0(0, &plic0, 1);
 
     // TODO: add devices to memory map using base addresses. Create mmio tree automatically based on the addresses
+    // TODO: generate dtb automatically from mmio
 
     mmap.add_device(&ram0, 8);  // 0x8000_0000
     mmap.add_device(&prpl, 0);

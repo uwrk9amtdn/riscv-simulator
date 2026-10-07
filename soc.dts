@@ -27,7 +27,7 @@
 			riscv,isa-base = "rv32i";
 			riscv,isa = "rv32ima_zicsr_zifencei";
 
-            mmu-type = "riscv,none";
+            mmu-type = "riscv,sv32";
 
             CPU0_intc: interrupt-controller {
                 #interrupt-cells = <1>;
@@ -50,17 +50,21 @@
 
         CLINT: clint@2000000 {
             compatible = "riscv,clint0";
-            interrupts-extended = <&CPU0_intc 3 &CPU0_intc 7>; // MSIP, MTIP
             reg = <0x02000000 0xc0000>;
+            interrupts-extended = <&CPU0_intc 3 &CPU0_intc 7>; // MSIP, MTIP
         };
 
         PLIC: plic@3000000 {
             compatible = "riscv,plic0";
-            interrupts-extended = <&CPU0_intc 11>; // MEIP
             reg = <0x03000000 0x4000000>;
-            riscv,ndev = <8>;
+
+            #address-cells = <0>;
             #interrupt-cells = <1>;
+
             interrupt-controller;
+
+            interrupts-extended = <&CPU0_intc 11 &CPU0_intc 9>; // MEIP, SEIP
+            riscv,ndev = <8>;
         };
 
         SERIAL0: ns16550@1000000 {

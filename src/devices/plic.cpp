@@ -134,6 +134,7 @@ bool plic::store(u32 addr, u32 len, const u8* data)
         if (context_id < context.size()) {
             if (enable_id < context[context_id].enable.size()) {
                 context[context_id].enable[enable_id] = val;
+                context[context_id].enable[0] &= ~1;
                 update_context(); // TODO: update only modified context
             }
         }
@@ -156,7 +157,7 @@ bool plic::store(u32 addr, u32 len, const u8* data)
                 id = (val);
                 id_word = id >> 5;
                 id_mask = 1 << (id & 0x1f);
-                if (id > 0 && id < num_ids) {
+                if (id > 0 && id < num_ids && (context[context_id].enable[id_word] & id_mask)) {
                     busy[id_word] &= ~id_mask;
                     update_pending();
                     update_context();
@@ -176,7 +177,7 @@ bool plic::store(u32 addr, u32 len, const u8* data)
 u64 plic::size() const
 {
     // return END_ADDRESS;
-    return CONTEXT_BASE + context.size() * 2^12;
+    return CONTEXT_BASE + context.size() * 0x1000;
 }
 
 void plic::tick()
@@ -204,6 +205,7 @@ void plic::set_interrupt_signal(u32 id, bool level)
 
 void plic::update_pending()
 {
+    // TODO: pending must be latched
     for (u32 i = 0; i < pending.size(); i++) {
         pending[i] = ~busy[i] & interrupt_signal[i];
     }
@@ -225,11 +227,11 @@ void plic::update_context()
             }
         }
 
+        c.claim_complete = best_id;
+
         if (best_id > 0 && best_pri > c.threshold) {
-            c.claim_complete = best_id;
             c.hcontext->set_external_interrupt(1);
         } else {
-            c.claim_complete = 0;
             c.hcontext->set_external_interrupt(0);
         }
     }

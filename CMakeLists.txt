@@ -29,7 +29,7 @@ add_executable(rvsim
     src/devices/uart.cpp
 )
 
-target_compile_features(rvsim PRIVATE cxx_std_17)
+target_compile_features(rvsim PRIVATE cxx_std_20)
 
 target_include_directories(rvsim PRIVATE src/hart/ src/devices/ src/)
 

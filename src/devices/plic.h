@@ -11,9 +11,9 @@ public:
     virtual void set_external_interrupt(bool level) = 0;
 };
 
-class machine_context : public hart_context {
+class m_context : public hart_context {
 public:
-    machine_context(hart* h)
+    m_context(hart* h)
     {
         this->h = h;
     }
@@ -21,15 +21,15 @@ public:
     {
         h->set_meip(level);
     }
-    ~machine_context() override { }
+    ~m_context() override { }
 
 private:
     hart* h;
 };
 
-class supervisor_context : public hart_context {
+class s_context : public hart_context {
 public:
-    supervisor_context(hart* h)
+    s_context(hart* h)
     {
         this->h = h;
     }
@@ -37,7 +37,7 @@ public:
     {
         h->set_seip(level);
     }
-    ~supervisor_context() override { }
+    ~s_context() override { }
 
 private:
     hart* h;

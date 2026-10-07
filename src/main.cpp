@@ -141,14 +141,16 @@ int main(int argc, char** argv)
     mmio mmap(28, 4);
     mmio prpl(24, 4);
 
-    hart hart0(&mmap, 0, 0x80000000);
+    hart hart_0(&mmap, 0, 0x80000000);
 
     ram ram0(128 * 1024 * 1024);
 
-    machine_context hart0_machine_context(&hart0);
-    plic plic0({&hart0_machine_context}, 1);
+    m_context m_ctx_0(&hart_0);
+    s_context s_ctx_0(&hart_0);
 
-    clint clint0({&hart0}, (float)instr_per_second / instr_per_tick);
+    plic plic0({&m_ctx_0, &s_ctx_0}, 1);
+
+    clint clint0({&hart_0}, (float)instr_per_second / instr_per_tick);
 
     uart uart0(0, &plic0, 1);
 
@@ -211,13 +213,13 @@ int main(int argc, char** argv)
         }
     }
 
-    hart0.regs[10] = 0;
-    hart0.regs[11] = dtb_start;
-    hart0.pc = kernel_start;
+    hart_0.regs[10] = 0;
+    hart_0.regs[11] = dtb_start;
+    hart_0.pc = kernel_start;
 
     while (1) {
         for (int i = 0; i < instr_per_tick; i++) {
-            hart0.step();
+            hart_0.step();
         }
         mmap.tick();
     }

@@ -62,3 +62,12 @@ template <typename T>
 {
     return d & ~(T(1) << index);
 }
+
+#include <source_location>
+#include <string>
+#include <stdexcept>
+
+inline void runtime_error(const std::string& message, const std::source_location& loc = std::source_location::current()) {
+    std::string full_message = message + " [at " + loc.file_name() + ":" + std::to_string(loc.line()) + "]";
+    throw std::runtime_error(full_message);
+}

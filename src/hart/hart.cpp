@@ -9,6 +9,8 @@ hart::hart(::mmio* mmio, u32 mhartid, u32 pc)
 
     mstatus = 0;
     mstatus.MPP() = 0b11;
+
+    misa = 0x40141101; // MXL = 32, extensions: A, I, M, S, U
 }
 
 void hart::step()

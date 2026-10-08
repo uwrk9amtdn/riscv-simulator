@@ -1,6 +1,5 @@
 #include "common.h"
 #include <hart.h>
-#include <stdexcept>
 
 void hart::csr_rw_misa (u32 rm, u32 wm, u32& rd, u32 wd) {
     rd = misa & rm;
@@ -29,7 +28,7 @@ void hart::csr_rw_mstatus (u32 rm, u32 wm, u32& rd, u32 wd) {
     mstatus &= 0x7E19AA; // TSR, TW, TWM, MXR, SUM, MPRV, MPP, SPP, MPIE, SPIE, MIE, SIE
 
     if (mstatus.TVM() || mstatus.TW() || mstatus.TSR() || mstatus.MXR() || mstatus.SUM() || mstatus.MPRV()) {
-        throw std::runtime_error("not implemented yet");
+        runtime_error("not implemented yet");
     }
 
     // 00: user, 01: supervisor, 11: machine
@@ -97,7 +96,7 @@ void hart::csr_rw_mideleg (u32 rm, u32 wm, u32& rd, u32 wd) {
 }
 
 void hart::csr_rw_mcounteren (u32 rm, u32 wm, u32& rd, u32 wd) {
-    throw std::runtime_error("not implemented yet");
+    rd = 0; // counters are not implemented, hardwired to zero
 }
 
 void hart::csr_rw_sstatus (u32 rm, u32 wm, u32& rd, u32 wd) {
@@ -106,7 +105,7 @@ void hart::csr_rw_sstatus (u32 rm, u32 wm, u32& rd, u32 wd) {
     mstatus = set_with_mask(mstatus, wd, wm & mask);
 
     if (mstatus.MXR() || mstatus.SUM()) {
-        throw std::runtime_error("not implemented yet");
+        runtime_error("not implemented yet");
     }
 }
 
@@ -158,5 +157,5 @@ void hart::csr_rw_satp (u32 rm, u32 wm, u32& rd, u32 wd) {
 }
 
 void hart::csr_rw_scounteren (u32 rm, u32 wm, u32& rd, u32 wd) {
-    throw std::runtime_error("not implemented yet");
+    rd = 0; // counters are not implemented, hardwired to zero
 }

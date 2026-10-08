@@ -91,13 +91,14 @@ void patch_fdt(std::vector<u8>& fdt, u32 initrd_start, u32 initrd_end, std::stri
     fdt.resize(fdt_totalsize(fdt_data));
 }
 
-void parse_cmdline(int argc, char* const* argv, const char** kernel, const char** initrd, const char** dtb, const char** append)
+void parse_cmdline(int argc, char* const* argv, const char** bios, const char** kernel, const char** initrd, const char** dtb, const char** append)
 {
     static struct option long_options[] = {
         {"kernel", required_argument, 0, 0},
         {"initrd", required_argument, 0, 1},
         {"dtb", required_argument, 0, 2},
         {"append", required_argument, 0, 3},
+        {"bios", required_argument, 0, 4},
         {0, 0, 0, 0}
     };
 
@@ -118,6 +119,9 @@ void parse_cmdline(int argc, char* const* argv, const char** kernel, const char*
         case 3:
             *append = optarg;
             break;
+        case 4:
+            *bios = optarg;
+            break;
         case '?':
             printf("unknown option: %s", argv[optind - 1]);
         default:
@@ -128,12 +132,13 @@ void parse_cmdline(int argc, char* const* argv, const char** kernel, const char*
 
 int main(int argc, char** argv)
 {
+    const char* bios = 0;
     const char* kernel = 0;
     const char* initrd = 0;
     const char* dtb = 0;
     const char* append = 0;
 
-    parse_cmdline(argc, argv, &kernel, &initrd, &dtb, &append);
+    parse_cmdline(argc, argv, &bios, &kernel, &initrd, &dtb, &append);
 
     int instr_per_second = 100000000;
     int instr_per_tick = 1000;
@@ -164,10 +169,20 @@ int main(int argc, char** argv)
     prpl.add_device(&clint0, 2); // 0x0200_0000
     prpl.add_device(&plic0, 3);  // 0x0300_0000
 
-    u32 kernel_start = 0x80000000;
+    u32 bios_start = 0x80000000;
+    u32 kernel_start = bios ? 0x80400000 : 0x80000000; // without bios, kernel runs directly in m mode
     u32 initrd_start = 0x86000000;
     u32 dtb_start = 0x87000000;
     u32 initrd_end = 0;
+
+    if (bios) {
+        auto f = load_file(bios);
+
+        bool ret = mmap.store(bios_start, f.size(), (u8*)&f[0]);
+        if (ret == false) {
+            throw std::runtime_error("could not write bios to ram");
+        }
+    }
 
     if (kernel) {
         auto f = load_file(kernel);
@@ -192,8 +207,8 @@ int main(int argc, char** argv)
     }
 
     if (dtb) {
-        if (!kernel) {
-            throw std::runtime_error("enabled dtb without kernel");
+        if (!kernel && !bios) {
+            throw std::runtime_error("enabled dtb without kernel or bios");
         }
         auto f = load_file(dtb);
 
@@ -215,7 +230,7 @@ int main(int argc, char** argv)
 
     hart_0.regs[10] = 0;
     hart_0.regs[11] = dtb_start;
-    hart_0.pc = kernel_start;
+    hart_0.pc = bios ? bios_start : kernel_start;
 
     while (1) {
         for (int i = 0; i < instr_per_tick; i++) {

@@ -245,9 +245,10 @@ u32 hart::sv32_ptw(u32 va, access_type_t access_type) {
             continue;
         }
 
-        // TODO: mstatus.MXR bit is not implemented yet. MXR == 1 is prevented. will be implemented later if the code tries to set MXR
         // TODO: S mode can access pages marked U regardless of SUM bit
-        // TODO: MPRV bit is not implemented
+        if (mstatus.MXR()) {
+            xwr |= xwr >> 2;
+        }
         if (!(static_cast<u32>(access_type) & xwr)) {
             throw trap{page_fault_exception, va};
         }
@@ -315,9 +316,12 @@ u32 hart::sv32_ptw(u32 va, access_type_t access_type) {
 
 u32 hart::resolve_addr(u32 addr, access_type_t access_type) {
     // TODO: implement PMA/PMP checks
-    // TODO: implement MPRV bit
 
-    if (get_bit(priv, 1) == 0b0 && satp.MODE() == 0b1) {
+    u32 _priv = priv;
+
+    _priv = (access_type != access_type_t::x && mstatus.MPRV()) ? mstatus.MPP() : priv;
+
+    if (get_bit(_priv, 1) == 0b0 && satp.MODE() == 0b1) {
         return sv32_ptw(addr, access_type);
     } else {
         return addr;

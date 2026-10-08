@@ -80,13 +80,16 @@ void hart::inst_wfi() {
 }
 
 void hart::inst_mret() {
-    // TODO: mstatus.MPRV
     if (priv != 0b11) {
         throw trap{trap_cause_t::illegal_instruction_exception, inst};
     }
 
     mstatus.MIE() = mstatus.MPIE();
     mstatus.MPIE() = 0b1;
+
+    if (mstatus.MPP() != 0b11) {
+        mstatus.MPRV() = 0b0;
+    }
 
     priv = mstatus.MPP();
     mstatus.MPP() = 0b00;
@@ -96,12 +99,13 @@ void hart::inst_mret() {
 
 void hart::inst_sret() {
     // TODO: mstatus.TSR
-    // TODO: mstatus.MPRV
     if (priv == 0b00) {
         throw trap{trap_cause_t::illegal_instruction_exception, inst};
     }
     mstatus.SIE()  = mstatus.SPIE();
     mstatus.SPIE() = 0b1;
+
+    mstatus.MPRV() = 0b0;
 
     priv = mstatus.SPP();
     mstatus.SPP() = 0b0;

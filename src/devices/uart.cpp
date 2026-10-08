@@ -71,7 +71,7 @@ uart::uart(const char* tty, ::plic* plic, u32 interrupt_id)
         fd = open(tty, O_RDWR | O_NOCTTY);
         if (fd < 0) {
             perror("Failed to open tty");
-            throw std::runtime_error("UART initialization failed");
+            runtime_error("UART initialization failed");
         }
     } else {
         custom_tty = false;
@@ -81,11 +81,11 @@ uart::uart(const char* tty, ::plic* plic, u32 interrupt_id)
             new_tios.c_lflag &= ~(ICANON | ECHO);
             if (tcsetattr(0, TCSANOW, &new_tios) != 0) {
                 perror("Failed to set terminal attributes");
-                throw std::runtime_error("UART initialization failed");
+                runtime_error("UART initialization failed");
             }
         } else {
             perror("Failed to get terminal attributes");
-            throw std::runtime_error("UART initialization failed");
+            runtime_error("UART initialization failed");
         }
     }
 

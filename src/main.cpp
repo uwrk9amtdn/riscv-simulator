@@ -24,7 +24,7 @@ std::vector<u8> load_file(std::string file)
 
     FILE* fp = fopen(file.c_str(), "r");
     if (!fp) {
-        throw std::runtime_error("file does not exist");
+        runtime_error("file does not exist");
     }
 
     fseek(fp, 0, SEEK_END);
@@ -46,14 +46,14 @@ void patch_fdt(std::vector<u8>& fdt, u32 initrd_start, u32 initrd_end, std::stri
 
     err = fdt_open_into(fdt_data, fdt_data, fdt.size());
     if (err) {
-        throw std::runtime_error(std::string("fdt_open_into failed: ") + fdt_strerror(err));
+        runtime_error(std::string("fdt_open_into failed: ") + fdt_strerror(err));
     }
 
     chosen = fdt_path_offset(fdt_data, "/chosen");
     if (chosen < 0) {
         chosen = fdt_add_subnode(fdt_data, 0, "chosen");
         if (chosen < 0) {
-            throw std::runtime_error(std::string("Failed to create /chosen: ") + fdt_strerror(chosen));
+            runtime_error(std::string("Failed to create /chosen: ") + fdt_strerror(chosen));
         }
     }
 
@@ -68,24 +68,24 @@ void patch_fdt(std::vector<u8>& fdt, u32 initrd_start, u32 initrd_end, std::stri
 
     err = fdt_setprop_string(fdt_data, chosen, "bootargs", final_bootargs.c_str());
     if (err) {
-        throw std::runtime_error(std::string("fdt_setprop_string failed: ") + fdt_strerror(err));
+        runtime_error(std::string("fdt_setprop_string failed: ") + fdt_strerror(err));
     }
 
     if (initrd_start != 0) {
         err = fdt_setprop_u32(fdt_data, chosen, "linux,initrd-start", initrd_start);
         if (err) {
-            throw std::runtime_error(std::string("fdt_setprop_u32 failed: ") + fdt_strerror(err));
+            runtime_error(std::string("fdt_setprop_u32 failed: ") + fdt_strerror(err));
         }
 
         err = fdt_setprop_u32(fdt_data, chosen, "linux,initrd-end", initrd_end);
         if (err) {
-            throw std::runtime_error(std::string("fdt_setprop_u32 failed: ") + fdt_strerror(err));
+            runtime_error(std::string("fdt_setprop_u32 failed: ") + fdt_strerror(err));
         }
     }
 
     err = fdt_pack(fdt_data);
     if (err) {
-        throw std::runtime_error(std::string("fdt_pack failed: ") + fdt_strerror(err));
+        runtime_error(std::string("fdt_pack failed: ") + fdt_strerror(err));
     }
 
     fdt.resize(fdt_totalsize(fdt_data));
@@ -180,7 +180,7 @@ int main(int argc, char** argv)
 
         bool ret = mmap.store(bios_start, f.size(), (u8*)&f[0]);
         if (ret == false) {
-            throw std::runtime_error("could not write bios to ram");
+            runtime_error("could not write bios to ram");
         }
     }
 
@@ -189,26 +189,26 @@ int main(int argc, char** argv)
 
         bool ret = mmap.store(kernel_start, f.size(), (u8*)&f[0]);
         if (ret == false) {
-            throw std::runtime_error("could not write kernel to ram");
+            runtime_error("could not write kernel to ram");
         }
     }
 
     if (initrd) {
         if (!kernel) {
-            throw std::runtime_error("enabled initrd without kernel");
+            runtime_error("enabled initrd without kernel");
         }
         auto f = load_file(initrd);
 
         bool ret = mmap.store(initrd_start, f.size(), (u8*)&f[0]);
         if (ret == false) {
-            throw std::runtime_error("could not write initrd to ram");
+            runtime_error("could not write initrd to ram");
         }
         initrd_end = initrd_start + f.size();
     }
 
     if (dtb) {
         if (!kernel && !bios) {
-            throw std::runtime_error("enabled dtb without kernel or bios");
+            runtime_error("enabled dtb without kernel or bios");
         }
         auto f = load_file(dtb);
 
@@ -224,7 +224,7 @@ int main(int argc, char** argv)
         bool ret = mmap.store(dtb_start, f.size(), (u8*)&f[0]);
 
         if (ret == false) {
-            throw std::runtime_error("could not write dtb to ram");
+            runtime_error("could not write dtb to ram");
         }
     }
 

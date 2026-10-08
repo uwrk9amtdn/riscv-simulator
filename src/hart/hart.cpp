@@ -217,7 +217,7 @@ u32 hart::sv32_ptw(u32 va, access_type_t access_type) {
     ppa = satp.PPN() << 12;
 
     // if (get_part(satp, 21, 20)) {
-    //     throw std::runtime_error("only 32 bit physical address supported");
+    //     runtime_error("only 32 bit physical address supported");
     // }
 
     for (int i = 1; i >= 0; i--) {
@@ -236,7 +236,7 @@ u32 hart::sv32_ptw(u32 va, access_type_t access_type) {
         if (get_part(pte, 31, 30)) {
             throw trap{page_fault_exception, va};
             // TODO: should we throw access fault
-            throw std::runtime_error("only 32 bit physical address supported");
+            runtime_error("only 32 bit physical address supported");
         }
 
         if (xwr == 0b000) {

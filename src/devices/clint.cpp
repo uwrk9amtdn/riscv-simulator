@@ -12,7 +12,7 @@ clint::clint(std::vector<hart*> harts, float tick_freq)
     this->harts = harts;
     this->tick_freq = tick_freq;
 
-    if (MTIME_FREQ < tick_freq) throw std::runtime_error("tick_freq can not be smaller than MTIME_FREQ");
+    if (MTIME_FREQ < tick_freq) runtime_error("tick_freq can not be smaller than MTIME_FREQ");
 
     mtime = 0;
     msip.resize(harts.size(), 0);

@@ -62,7 +62,7 @@ void hart::inst_ecall() {
     }
 
     if (priv == 0b10) {
-        throw std::runtime_error("priv cannot be 0b10");
+        runtime_error("priv cannot be 0b10");
     }
 
 }

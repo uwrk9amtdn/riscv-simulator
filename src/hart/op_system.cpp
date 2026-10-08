@@ -1,6 +1,5 @@
 
 #include <hart.h>
-#include <stdexcept>
 
 void hart::decode_system()
 {

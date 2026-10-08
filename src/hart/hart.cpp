@@ -1,5 +1,4 @@
 #include "hart.h"
-#include <stdexcept>
 
 hart::hart(::mmio* mmio, u32 mhartid, u32 pc)
 {

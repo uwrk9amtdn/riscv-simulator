@@ -27,7 +27,7 @@ void hart::csr_rw_mstatus (u32 rm, u32 wm, u32& rd, u32 wd) {
 
     mstatus &= 0x7E19AA; // TSR, TW, TWM, MXR, SUM, MPRV, MPP, SPP, MPIE, SPIE, MIE, SIE
 
-    if (mstatus.TVM() || mstatus.TW() || mstatus.TSR() || mstatus.SUM()) {
+    if (mstatus.TVM() || mstatus.TW() || mstatus.TSR()) {
         runtime_error("not implemented yet");
     }
 
@@ -106,10 +106,6 @@ void hart::csr_rw_sstatus (u32 rm, u32 wm, u32& rd, u32 wd) {
     u32 mask = 0x0c0122;
     rd = (mstatus & rm & mask);
     mstatus = set_with_mask(mstatus, wd, wm & mask);
-
-    if (mstatus.SUM()) {
-        runtime_error("not implemented yet");
-    }
 }
 
 void hart::csr_rw_sip (u32 rm, u32 wm, u32& rd, u32 wd) {

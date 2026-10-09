@@ -206,7 +206,7 @@ private:
     trap_cause_t access_type_to_access_fault_exception(access_type_t access_type);
     trap_cause_t access_type_to_page_fault_exception(access_type_t access_type);
 
-    u32 sv32_ptw(u32 va, access_type_t access_type);
+    u32 sv32_ptw(u32 va, access_type_t access_type, u32 priv);
 
     u32 resolve_addr(u32 addr, access_type_t access_type);
 

@@ -202,7 +202,7 @@ hart::trap_cause_t hart::access_type_to_page_fault_exception(access_type_t acces
     return trap_cause_t{};
 }
 
-u32 hart::sv32_ptw(u32 va, access_type_t access_type) {
+u32 hart::sv32_ptw(u32 va, access_type_t access_type, u32 priv) {
     u32 pte;
     u32 ppa;
     u32 vpn[2];
@@ -244,7 +244,6 @@ u32 hart::sv32_ptw(u32 va, access_type_t access_type) {
             continue;
         }
 
-        // TODO: S mode can access pages marked U regardless of SUM bit
         if (mstatus.MXR()) {
             xwr |= xwr >> 2;
         }
@@ -252,22 +251,17 @@ u32 hart::sv32_ptw(u32 va, access_type_t access_type) {
             throw trap{page_fault_exception, va};
         }
 
-        /* TODO: will be implemented later if necessary
-            if (U) {
-                if (priv == 0b01) {
-                    if ((access_type == r || access_type == w) && !mstatus.SUM) {
-                        throw page_fault_exception;
-                    }
-                    if (access_type == x) {
-                        throw page_fault_exception;
-                    }
-                }
-            } else {
-                if (priv == 0b00) {
-                    throw page_fault_exception;
+        if (get_bit(pte, 4)) { // U
+            if (priv == 0b01) {
+                if (access_type == access_type_t::x || !mstatus.SUM()) {
+                    throw trap{page_fault_exception, va};
                 }
             }
-        */
+        } else {
+            if (priv == 0b00) {
+                throw trap{page_fault_exception, va};
+            }
+        }
 
         if (i == 1 && get_part(pte, 19, 10) != 0) {
             throw trap{page_fault_exception, va};
@@ -321,7 +315,7 @@ u32 hart::resolve_addr(u32 addr, access_type_t access_type) {
     _priv = (access_type != access_type_t::x && mstatus.MPRV()) ? mstatus.MPP() : priv;
 
     if (get_bit(_priv, 1) == 0b0 && satp.MODE() == 0b1) {
-        return sv32_ptw(addr, access_type);
+        return sv32_ptw(addr, access_type, _priv);
     } else {
         return addr;
     }

@@ -150,6 +150,7 @@ public:
     csr         mcause;
     csr         mtval;
     csr         mconfigptr;
+    csr         mcounteren;
 
     csr_tvec    stvec;
     csr         sscratch;
@@ -157,6 +158,7 @@ public:
     csr         scause;
     csr         stval;
     csr_satp    satp;
+    csr         scounteren;
 
     u32 pc = 0;
     u32 regs[32] = {0};

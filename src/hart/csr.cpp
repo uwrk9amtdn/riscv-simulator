@@ -96,7 +96,10 @@ void hart::csr_rw_mideleg (u32 rm, u32 wm, u32& rd, u32 wd) {
 }
 
 void hart::csr_rw_mcounteren (u32 rm, u32 wm, u32& rd, u32 wd) {
-    rd = 0; // counters are not implemented, hardwired to zero
+    // counters are not implemented, reads of time always trap to m mode.
+    // TM is writable so that the sbi firmware knows it is allowed to emulate time for s mode
+    rd = mcounteren & rm;
+    mcounteren = set_with_mask(mcounteren, wd, wm & 0x2); // TM
 }
 
 void hart::csr_rw_sstatus (u32 rm, u32 wm, u32& rd, u32 wd) {
@@ -157,5 +160,6 @@ void hart::csr_rw_satp (u32 rm, u32 wm, u32& rd, u32 wd) {
 }
 
 void hart::csr_rw_scounteren (u32 rm, u32 wm, u32& rd, u32 wd) {
-    rd = 0; // counters are not implemented, hardwired to zero
+    rd = scounteren & rm;
+    scounteren = set_with_mask(scounteren, wd, wm & 0x2); // TM
 }

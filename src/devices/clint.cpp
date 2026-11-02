@@ -5,16 +5,13 @@
 #define MTIMECMP_BASE 0x4000
 #define MTIME_BASE    0xbff8
 
-#define MTIME_FREQ 10000000.0
+#define NS_PER_MTIME 100 // mtime runs at 10 MHz (timebase-frequency in the dts)
 
-clint::clint(std::vector<hart*> harts, float tick_freq)
+clint::clint(std::vector<hart*> harts)
 {
     this->harts = harts;
-    this->tick_freq = tick_freq;
 
-    if (MTIME_FREQ < tick_freq) runtime_error("tick_freq can not be smaller than MTIME_FREQ");
-
-    mtime = 0;
+    time0_ns = host_now_ns();
     msip.resize(harts.size(), 0);
     mtimecmp.resize(harts.size(), 0);
 }
@@ -81,7 +78,7 @@ bool clint::load(u32 addr, u32 len, u8* data)
             return false;
         }
 
-        d = mtime;
+        d = mtime_now();
 
         if (len == 8) {
             val64 = d;
@@ -148,7 +145,7 @@ bool clint::store(u32 addr, u32 len, const u8* data)
                 }
             }
 
-            if (mtimecmp[hart_id] <= mtime) {
+            if (mtimecmp[hart_id] <= mtime_now()) {
                 harts[hart_id]->set_mtip(1);
             } else {
                 harts[hart_id]->set_mtip(0);
@@ -167,6 +164,9 @@ bool clint::store(u32 addr, u32 len, const u8* data)
             return false;
         }
 
+        u64 cur = mtime_now();
+        u64 mtime = cur;
+
         if (len == 8) {
             val64 = ((u64*)data)[0];
             mtime = val64;
@@ -178,6 +178,8 @@ bool clint::store(u32 addr, u32 len, const u8* data)
                 mtime = (mtime & 0xffffffff00000000) | val32;
             }
         }
+
+        mtime_offset += mtime - cur;
 
         for (u32 i = 0; i < harts.size(); i++) {
             if (mtimecmp[i] <= mtime) {
@@ -198,10 +200,38 @@ u64 clint::size() const
     return 0xc000;
 }
 
+u64 clint::mtime_now() const
+{
+    return (host_now_ns() - time0_ns) / NS_PER_MTIME + mtime_offset;
+}
+
+u64 clint::next_deadline_ns()
+{
+    u64 now_ns = host_now_ns();
+    u64 mtime = (now_ns - time0_ns) / NS_PER_MTIME + mtime_offset;
+    u64 deadline = NO_DEADLINE;
+
+    for (u32 i = 0; i < harts.size(); i++) {
+        if (mtimecmp[i] <= mtime) {
+            continue; // already pending, nothing changes by itself
+        }
+        u64 delta = mtimecmp[i] - mtime;
+        if (delta > ((u64)1 << 50)) {
+            continue; // effectively never (e.g. mtimecmp = -1). Also keeps the multiplication from overflowing
+        }
+        u64 d = now_ns + delta * NS_PER_MTIME;
+        if (d < deadline) {
+            deadline = d;
+        }
+    }
+
+    return deadline;
+}
+
 void clint::tick()
 {
+    u64 mtime = mtime_now();
 
-    mtime += MTIME_FREQ / tick_freq;
     for (u32 i = 0; i < harts.size(); i++) {
         if (mtimecmp[i] <= mtime) {
             harts[i]->set_mtip(1);

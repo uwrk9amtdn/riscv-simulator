@@ -15,6 +15,10 @@ public:
     bool store(u32 addr, u32 len, const u8* data) override;
     u64 size() const override;
     void tick() override;
+    u64 next_deadline_ns() override;
+
+    int rx_fd() const;  // fd to wait on for input, -1 while the receiver can not take a byte
+    void poll_input();  // move pending input into the receiver, never blocks
     ~uart() override;
 
 private:
@@ -43,7 +47,12 @@ private:
     bool custom_tty = false;
     termios old_tios;
 
-    int timeout_tick_count = 0;
+    bool rx_timed_out = false; // character timeout indication
+    u64 rx_deadline_ns = 0;    // host time at which the character timeout fires
+    u64 last_poll_ns = 0;
+    bool rx_eof = false;
+
+    bool can_rx() const;
 
     bool interrupt_pre = false;
 };

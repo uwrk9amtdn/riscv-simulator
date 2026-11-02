@@ -10,9 +10,9 @@
 #include <stdlib.h>
 
 #include <string>
-#include <stdexcept>
 
 #include <getopt.h>
+#include <poll.h>
 #include <libfdt.h>
 
 // TODO: disable ctrl+c
@@ -140,7 +140,6 @@ int main(int argc, char** argv)
 
     parse_cmdline(argc, argv, &bios, &kernel, &initrd, &dtb, &append);
 
-    int instr_per_second = 100000000;
     int instr_per_tick = 1000;
 
     mmio mmap(28, 4);
@@ -155,7 +154,7 @@ int main(int argc, char** argv)
 
     plic plic0({&m_ctx_0, &s_ctx_0}, 1);
 
-    clint clint0({&hart_0}, (float)instr_per_second / instr_per_tick);
+    clint clint0({&hart_0});
 
     uart uart0(0, &plic0, 1);
 
@@ -233,9 +232,39 @@ int main(int argc, char** argv)
     hart_0.pc = bios ? bios_start : kernel_start;
 
     while (1) {
-        for (int i = 0; i < instr_per_tick; i++) {
-            hart_0.step();
+        if (hart_0.waiting) {
+            // the hart is parked in WFI. Sleep in the kernel until input arrives or a device deadline passes
+            u64 now = host_now_ns();
+            u64 deadline = mmap.next_deadline_ns();
+
+            struct pollfd pfd;
+            pfd.fd = uart0.rx_fd(); // poll ignores a negative fd
+            pfd.events = POLLIN;
+            pfd.revents = 0;
+
+            timespec ts;
+            timespec* timeout = nullptr; // no deadline: only input can wake the machine
+
+            if (deadline != NO_DEADLINE) {
+                u64 d = deadline > now ? deadline - now : 0;
+                ts.tv_sec = d / 1000000000ull;
+                ts.tv_nsec = d % 1000000000ull;
+                timeout = &ts;
+            }
+
+            if (ppoll(&pfd, 1, timeout, nullptr) > 0) {
+                uart0.poll_input();
+            }
+        } else {
+            for (int i = 0; i < instr_per_tick && !hart_0.waiting; i++) {
+                hart_0.step();
+            }
         }
+
         mmap.tick();
+
+        if (hart_0.waiting && hart_0.wfi_wake_pending()) {
+            hart_0.waiting = false;
+        }
     }
 }

@@ -76,6 +76,10 @@ void hart::inst_wfi() {
         throw trap{trap_cause_t::illegal_instruction_exception, inst};
     }
     pc = pc + 4;
+
+    if (!wfi_wake_pending()) {
+        waiting = true;
+    }
 }
 
 void hart::inst_mret() {

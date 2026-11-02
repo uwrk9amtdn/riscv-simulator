@@ -15,6 +15,7 @@ public:
     bool store(u32 addr, u32 len, const u8* data) override;
     u64 size() const override;
     void tick() override;
+    u64 next_deadline_ns() override;
 
 private:
     std::vector<mmio_device*> devices;

@@ -20,6 +20,14 @@ public:
 
     void step();
 
+    // set by WFI. While it is set the hart must not be stepped. Whoever drives the hart clears it once
+    // wfi_wake_pending() is true
+    bool waiting = false;
+
+    // WFI wake condition: an interrupt is pending and individually enabled in mie.
+    // mstatus.MIE/SIE and mideleg are ignored on purpose (the spec requires it and linux idles with interrupts off)
+    bool wfi_wake_pending() { return ((mip | (seip ? 1u << 9 : 0)) & mie) != 0; }
+
 public:
     struct csr {
         u32 value{0};

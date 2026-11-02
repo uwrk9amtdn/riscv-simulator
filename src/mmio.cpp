@@ -51,6 +51,20 @@ u64 mmio::size() const {
     return (u64)1 << (address_bits + slot_bits);
 }
 
+u64 mmio::next_deadline_ns()
+{
+    u64 deadline = NO_DEADLINE;
+    for (auto& device : devices) {
+        if (device) {
+            u64 d = device->next_deadline_ns();
+            if (d < deadline) {
+                deadline = d;
+            }
+        }
+    }
+    return deadline;
+}
+
 void mmio::tick()
 {
     for (auto& device : devices) {

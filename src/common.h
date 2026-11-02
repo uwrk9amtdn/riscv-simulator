@@ -63,6 +63,18 @@ template <typename T>
     return d & ~(T(1) << index);
 }
 
+#include <time.h>
+
+// host monotonic clock in nanoseconds. Time base of the machine
+constexpr u64 NO_DEADLINE = UINT64_MAX;
+
+inline u64 host_now_ns()
+{
+    timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (u64)ts.tv_sec * 1000000000ull + (u64)ts.tv_nsec;
+}
+
 #include <source_location>
 #include <string>
 #include <stdexcept>

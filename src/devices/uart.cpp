@@ -48,6 +48,9 @@
 
 #define UART_QUEUE_SIZE 16
 
+#define RX_TIMEOUT_NS  1000000 // character timeout
+#define POLL_PERIOD_NS 1000000 // how often the host fd is checked while the hart is running
+
 uart::uart(const char* tty, ::plic* plic, u32 interrupt_id)
 {
     this->plic_ = plic;
@@ -119,7 +122,8 @@ bool uart::load(u32 addr, u32 len, u8* data)
             val = dll;
         } else {
             update = true;
-            timeout_tick_count = 0;
+            rx_timed_out = false;
+            rx_deadline_ns = host_now_ns() + RX_TIMEOUT_NS;
             if (fcr & UART_FCR_ENABLE_FIFO) {
                 if (rx_queue.empty()) {
                     val = 0;
@@ -297,43 +301,81 @@ u64 uart::size() const
     return 8;
 }
 
-void uart::tick()
+bool uart::can_rx() const
 {
-
-    struct pollfd pfd;
-    int ret;
-    u8 ch;
-
-    if (timeout_tick_count < 100 && rx_queue.size() > 0) {
-        timeout_tick_count += 1;
+    if (rx_eof || (mcr & UART_MCR_LOOP)) {
+        return false;
     }
 
-    if (mcr & UART_MCR_LOOP) {
-    } else {
+    if (fcr & UART_FCR_ENABLE_FIFO) {
+        return rx_queue.size() < UART_QUEUE_SIZE;
+    }
+
+    return !(lsr & UART_LSR_DR);
+}
+
+int uart::rx_fd() const
+{
+    // while the receiver is full the fd must not be waited on: it stays readable, so poll() would return
+    // immediately and the WFI sleep would turn back into a busy loop
+    return can_rx() ? fd : -1;
+}
+
+u64 uart::next_deadline_ns()
+{
+    if ((fcr & UART_FCR_ENABLE_FIFO) && !rx_queue.empty() && !rx_timed_out) {
+        return rx_deadline_ns;
+    }
+    return NO_DEADLINE;
+}
+
+void uart::poll_input()
+{
+    // bytes are taken from the host only while the receiver has room, the host tty buffers the rest
+    while (can_rx()) {
+        struct pollfd pfd;
         pfd.fd = fd;
         pfd.events = POLLIN;
-        ret = poll(&pfd, 1, 0);
-        if (ret > 0 && pfd.events & POLLIN) {
-            ret = ::read(fd, &ch, 1);
-            if (ret > 0) {
-                if (fcr & UART_FCR_ENABLE_FIFO) {
-                    if (rx_queue.size() < UART_QUEUE_SIZE) {
-                        rx_queue.push(ch);
-                    } else {
-                        lsr |= UART_LSR_OE;
-                    }
-                } else {
-                    rbr = ch;
-                    if (lsr & UART_LSR_DR) {
-                        lsr |= UART_LSR_OE;
-                    }
-                }
-                lsr |= UART_LSR_DR;
-            }
+        pfd.revents = 0;
+
+        if (poll(&pfd, 1, 0) <= 0) {
+            break;
         }
+
+        u8 ch;
+        if (::read(fd, &ch, 1) <= 0) {
+            rx_eof = true; // end of input, stop looking at the fd
+            break;
+        }
+
+        if (fcr & UART_FCR_ENABLE_FIFO) {
+            rx_queue.push(ch);
+        } else {
+            rbr = ch;
+        }
+        lsr |= UART_LSR_DR;
+
+        rx_timed_out = false;
+        rx_deadline_ns = host_now_ns() + RX_TIMEOUT_NS;
     }
 
     update_interrupt();
+}
+
+void uart::tick()
+{
+    u64 now = host_now_ns();
+
+    if (!rx_queue.empty() && !rx_timed_out && now >= rx_deadline_ns) {
+        rx_timed_out = true;
+    }
+
+    if (now - last_poll_ns >= POLL_PERIOD_NS) {
+        last_poll_ns = now;
+        poll_input();
+    } else {
+        update_interrupt();
+    }
 }
 
 void uart::update_interrupt()
@@ -365,7 +407,7 @@ void uart::update_interrupt()
                 l = 14;
                 break;
             }
-            if (rx_queue.size() >= l || timeout_tick_count == 100) {
+            if (rx_queue.size() >= l || (rx_timed_out && !rx_queue.empty())) {
                 trigger = true;
             }
         } else {

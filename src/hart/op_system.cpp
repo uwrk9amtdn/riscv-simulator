@@ -122,6 +122,9 @@ void hart::inst_sfence_vma() {
     if (priv == 0b00) {
         throw trap{trap_cause_t::illegal_instruction_exception, inst};
     }
+
+    tlb.flush();
+
     pc = pc + 4;
 }
 

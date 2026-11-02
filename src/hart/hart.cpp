@@ -314,11 +314,19 @@ u32 hart::resolve_addr(u32 addr, access_type_t access_type) {
 
     _priv = (access_type != access_type_t::x && mstatus.MPRV()) ? mstatus.MPP() : priv;
 
+    u32 r = addr;
+
     if (get_bit(_priv, 1) == 0b0 && satp.MODE() == 0b1) {
-        return sv32_ptw(addr, access_type, _priv);
-    } else {
-        return addr;
+        u32 d;
+        if (tlb.get(addr >> 12, d)) {
+            r = set_part(addr, 31, 12, d);
+        } else {
+            r = sv32_ptw(addr, access_type, _priv);
+            tlb.set(addr >> 12, r >> 12);
+        }
     }
+
+    return r;
 }
 
 void hart::load(u32 addr, u32 len, u8* data, access_type_t access_type) {

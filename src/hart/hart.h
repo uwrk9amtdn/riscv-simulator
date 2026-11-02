@@ -3,6 +3,7 @@
 #include "common.h"
 #include "mmio.h"
 #include "constants.h"
+#include "cache.h"
 
 class hart {
 
@@ -233,6 +234,8 @@ private:
     u32 rs2;
     u32 funct3;
     u32 funct7;
+
+    cache<u32, u32> tlb;
 
 private:
     void decode_lui();

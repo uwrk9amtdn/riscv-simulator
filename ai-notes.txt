@@ -1,0 +1,26 @@
+No, it is not correct yet. The cache stores only the page number mapping, so a hit skips every check the page table walker does. I read the diff and the walker but did not build or boot anything.
+
+Bugs in the diff
+
+Permissions are skipped on a hit. In hart.cpp:320-327 a hit returns the physical address without checking read, write or execute. A page that was read once can then be written even if it is read-only. This breaks copy-on-write in Linux, since the write fault never arrives.
+Privilege is skipped on a hit. Once the kernel touches a supervisor page, user code can reach the same address without a fault. The same applies in reverse for user pages and the SUM bit, and for MXR.
+The dirty bit is never set after a read. A read fills the entry, and a later write hits the cache and never reaches the walker. The page table entry stays clean, so the kernel can drop modified pages.
+Address space switches leave stale entries. The address space ID bits in satp are writable in csr.cpp:151-155, so Linux detects ID support and stops flushing on context switch. Your cache is not keyed by ID, so one process will see the mappings of another.
+How to fix them
+
+Store the permission bits with the entry. Keep R, W, X, U and D from the leaf entry next to the physical page number. On a hit, run the same permission check the walker runs, using the current effective privilege, SUM and MXR. Pulling that check into one shared function avoids two copies.
+Treat a write to a clean entry as a miss. Let the walker set the dirty bit and then refill the entry.
+Flush on satp writes for now. Do this until entries carry the ID. Hardwiring the ID bits to zero also works, because Linux then flushes on every switch itself.
+With permissions checked on each hit, you do not need to flush when mstatus changes or when privilege changes.
+
+Things that are fine
+
+Superpages work, because you store the 4K page number of the resolved address and flush everything on sfence.vma. Selective flushing will need the page size in the entry later.
+Faulting walks throw before the entry is written, so no bad entries get cached.
+Using the effective privilege for MPRV accesses is right.
+Smaller points in cache.h
+
+The map is declared with u32 for both types, so the template parameters are ignored.
+The file has no include guard.
+The lookup hashes twice, once for the presence check and once for the read. A single find does it in one.
+A hash map on every memory access is likely slower than you want. A direct-mapped array indexed by the low bits of the virtual page number is the usual choice, and it makes a full flush cheap with a generation counter.

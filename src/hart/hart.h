@@ -27,7 +27,10 @@ public:
 
     // WFI wake condition: an interrupt is pending and individually enabled in mie.
     // mstatus.MIE/SIE and mideleg are ignored on purpose (the spec requires it and linux idles with interrupts off)
-    bool wfi_wake_pending() { return ((mip | (seip ? 1u << 9 : 0)) & mie) != 0; }
+    bool wfi_wake_pending() { return (effective_mip() & mie) != 0; }
+
+    // mip as software and interrupt logic see it: the software-writable SEIP bit OR'd with the PLIC's external interrupt line
+    u32 effective_mip() const { return mip | (seip ? 1u << 9 : 0); }
 
 public:
     struct csr {

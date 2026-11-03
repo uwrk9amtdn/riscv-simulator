@@ -17,7 +17,7 @@ void hart::step()
     try {
 
         {
-            u32 mip_ = mip | (seip ? 1 << 9 : 0);
+            u32 mip_ = effective_mip();
             u32 mp = mip_ & mie & ~mideleg;
             u32 sp = mip_ & mie & mideleg;
 

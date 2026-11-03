@@ -52,7 +52,7 @@ void hart::csr_rw_mtvec (u32 rm, u32 wm, u32& rd, u32 wd) {
 }
 
 void hart::csr_rw_mip (u32 rm, u32 wm, u32& rd, u32 wd) {
-    u32 mip_ = mip | (seip ? 1 << 9 : 0);
+    u32 mip_ = effective_mip();
     rd = mip_ & rm;
     mip = set_with_mask(mip, wd, wm & 0x222); // SSIP, STIP, SEIP
 }
@@ -110,7 +110,7 @@ void hart::csr_rw_sstatus (u32 rm, u32 wm, u32& rd, u32 wd) {
 
 void hart::csr_rw_sip (u32 rm, u32 wm, u32& rd, u32 wd) {
     // only delegated
-    u32 mip_ = mip | (seip ? 1 << 9 : 0);
+    u32 mip_ = effective_mip();
     rd = mip_ & rm & mideleg;
     mip = set_with_mask(mip, wd, wm & mideleg & 0x2); // only ssip is writable if delegated
 }

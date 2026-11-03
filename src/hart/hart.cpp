@@ -17,9 +17,9 @@ void hart::step()
     try {
 
         {
-            u32 mip_ = effective_mip();
-            u32 mp = mip_ & mie & ~mideleg;
-            u32 sp = mip_ & mie & mideleg;
+            u32 mip = effective_mip();
+            u32 mp = mip & mie & ~mideleg;
+            u32 sp = mip & mie & mideleg;
 
             switch(priv) {
                 case 0b11: {
@@ -317,13 +317,16 @@ u32 hart::resolve_addr(u32 addr, access_type_t access_type) {
     u32 r = addr;
 
     if (get_bit(_priv, 1) == 0b0 && satp.MODE() == 0b1) {
-        u32 d;
-        if (tlb.get(addr >> 12, d)) {
-            r = set_part(addr, 31, 12, d);
-        } else {
-            r = sv32_ptw(addr, access_type, _priv);
-            tlb.set(addr >> 12, r >> 12);
-        }
+
+        r = sv32_ptw(addr, access_type, _priv);
+
+        // u32 d;
+        // if (tlb.get(addr >> 12, d)) {
+        //     r = set_part(addr, 31, 12, d);
+        // } else {
+        //     r = sv32_ptw(addr, access_type, _priv);
+        //     tlb.set(addr >> 12, r >> 12);
+        // }
     }
 
     return r;

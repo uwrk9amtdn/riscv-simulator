@@ -202,6 +202,51 @@ hart::trap_cause_t hart::access_type_to_page_fault_exception(access_type_t acces
     return trap_cause_t{};
 }
 
+void hart::set_tlb(const std::string& kind, u32 entries, u32 ways)
+{
+#ifdef TLB_STATIC
+    (void)kind;
+    itlb = std::make_unique<hart_tlb_t>(entries, ways);
+    dtlb = std::make_unique<hart_tlb_t>(entries, ways);
+#else
+    auto make = [&]() -> std::unique_ptr<TLB> {
+        if (kind == "off")  return nullptr;
+        if (kind == "null") return std::make_unique<NullTLB>();
+        if (kind == "dm")   return std::make_unique<DirectMappedTLB>(entries);
+        if (kind == "sa")   return std::make_unique<SetAssocTLB>(entries, ways);
+        if (kind == "fa")   return std::make_unique<FullyAssocTLB>(entries);
+        runtime_error("unknown tlb kind: " + kind);
+        return nullptr;
+    };
+    itlb = make();
+    dtlb = make();
+#endif
+}
+
+// priv is the effective privilege of the access (MPRV applied), not the current privilege
+void hart::sv32_perm_check(u32 va, u32 u, u32 xwr, access_type_t access_type, u32 priv) {
+    trap_cause_t page_fault_exception = access_type_to_page_fault_exception(access_type);
+
+    if (mstatus.MXR()) {
+        xwr |= xwr >> 2;
+    }
+    if (!(static_cast<u32>(access_type) & xwr)) {
+        throw trap{page_fault_exception, va};
+    }
+
+    if (u) {
+        if (priv == 0b01) {
+            if (access_type == access_type_t::x || !mstatus.SUM()) {
+                throw trap{page_fault_exception, va};
+            }
+        }
+    } else {
+        if (priv == 0b00) {
+            throw trap{page_fault_exception, va};
+        }
+    }
+}
+
 u32 hart::sv32_ptw(u32 va, access_type_t access_type, u32 priv) {
     u32 pte;
     u32 ppa;
@@ -215,9 +260,10 @@ u32 hart::sv32_ptw(u32 va, access_type_t access_type, u32 priv) {
 
     ppa = satp.PPN() << 12;
 
-    // if (get_part(satp, 21, 20)) {
-    //     runtime_error("only 32 bit physical address supported");
-    // }
+    if (get_part(satp, 21, 20)) {
+        throw trap{page_fault_exception, va};
+        // TODO: should we throw access fault
+    }
 
     for (int i = 1; i >= 0; i--) {
         u32 a = ppa + vpn[i] * 4;
@@ -235,7 +281,6 @@ u32 hart::sv32_ptw(u32 va, access_type_t access_type, u32 priv) {
         if (get_part(pte, 31, 30)) {
             throw trap{page_fault_exception, va};
             // TODO: should we throw access fault
-            runtime_error("only 32 bit physical address supported");
         }
 
         if (xwr == 0b000) {
@@ -244,24 +289,7 @@ u32 hart::sv32_ptw(u32 va, access_type_t access_type, u32 priv) {
             continue;
         }
 
-        if (mstatus.MXR()) {
-            xwr |= xwr >> 2;
-        }
-        if (!(static_cast<u32>(access_type) & xwr)) {
-            throw trap{page_fault_exception, va};
-        }
-
-        if (get_bit(pte, 4)) { // U
-            if (priv == 0b01) {
-                if (access_type == access_type_t::x || !mstatus.SUM()) {
-                    throw trap{page_fault_exception, va};
-                }
-            }
-        } else {
-            if (priv == 0b00) {
-                throw trap{page_fault_exception, va};
-            }
-        }
+        sv32_perm_check(va, get_bit(pte, 4), xwr, access_type, priv);
 
         if (i == 1 && get_part(pte, 19, 10) != 0) {
             throw trap{page_fault_exception, va};
@@ -274,7 +302,6 @@ u32 hart::sv32_ptw(u32 va, access_type_t access_type, u32 priv) {
             store = true;
         }
 
-
         if (access_type == access_type_t::w && get_bit(pte, 7) == 0b0) {
             pte = set_bit(pte, 7);
             store = true;
@@ -285,6 +312,21 @@ u32 hart::sv32_ptw(u32 va, access_type_t access_type, u32 priv) {
             if (!mmio_->store(a, 4, (u8*)&pte)) {
                 throw trap{access_fault_exception, va};
             }
+        }
+
+        hart_tlb_t* tlb = access_type == access_type_t::x ? itlb.get() : dtlb.get();
+
+        if (tlb) {
+            TLBEntry e;
+
+            e.asid  = satp.ASID();
+            e.flags = get_part(pte, 7, 0);
+            e.super = i == 1;
+            e.vpn   = get_part(va, 31, 12);
+            // a superpage is cached as the 4 KiB piece that was accessed, so indexed TLBs can use the low vpn bits
+            e.ppn   = i == 1 ? (get_part(pte, 29, 20) << 10 | vpn[0]) : get_part(pte, 29, 10);
+
+            tlb->insert(e);
         }
 
         u32 pa;
@@ -310,26 +352,25 @@ u32 hart::sv32_ptw(u32 va, access_type_t access_type, u32 priv) {
 u32 hart::resolve_addr(u32 addr, access_type_t access_type) {
     // TODO: implement PMA/PMP checks
 
-    u32 _priv = priv;
+    u32 _priv = (access_type != access_type_t::x && mstatus.MPRV()) ? mstatus.MPP() : priv;
 
-    _priv = (access_type != access_type_t::x && mstatus.MPRV()) ? mstatus.MPP() : priv;
-
-    u32 r = addr;
-
-    if (get_bit(_priv, 1) == 0b0 && satp.MODE() == 0b1) {
-
-        r = sv32_ptw(addr, access_type, _priv);
-
-        // u32 d;
-        // if (tlb.get(addr >> 12, d)) {
-        //     r = set_part(addr, 31, 12, d);
-        // } else {
-        //     r = sv32_ptw(addr, access_type, _priv);
-        //     tlb.set(addr >> 12, r >> 12);
-        // }
+    if (get_bit(_priv, 1) == 0b1 || satp.MODE() == 0b0) {
+        return addr; // M mode or bare: no translation
     }
 
-    return r;
+    hart_tlb_t* tlb = access_type == access_type_t::x ? itlb.get() : dtlb.get();
+
+    if (tlb) {
+        if (auto e = tlb->lookup(addr, satp.ASID())) {
+            // entries are only inserted with A set. A write to a clean page is a miss so the walker sets D
+            if (access_type != access_type_t::w || get_bit(e->flags, 7)) {
+                sv32_perm_check(addr, get_bit(e->flags, 4), get_part(e->flags, 3, 1), access_type, _priv);
+                return e->ppn << 12 | get_part(addr, 11, 0);
+            }
+        }
+    }
+
+    return sv32_ptw(addr, access_type, _priv);
 }
 
 void hart::load(u32 addr, u32 len, u8* data, access_type_t access_type) {

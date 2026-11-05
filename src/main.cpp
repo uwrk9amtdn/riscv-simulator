@@ -10,6 +10,9 @@
 #include <stdlib.h>
 
 #include <string>
+#include <chrono>
+#include <ctime>
+#include <csignal>
 
 #include <getopt.h>
 #include <poll.h>
@@ -91,7 +94,19 @@ void patch_fdt(std::vector<u8>& fdt, u32 initrd_start, u32 initrd_end, std::stri
     fdt.resize(fdt_totalsize(fdt_data));
 }
 
-void parse_cmdline(int argc, char* const* argv, const char** bios, const char** kernel, const char** initrd, const char** dtb, const char** append)
+// SIGUSR1 stops the run and prints the statistics (used by benchmark drivers)
+static volatile sig_atomic_t stop_requested = 0;
+
+static void on_sigusr1(int) { stop_requested = 1; }
+
+struct sim_options {
+    std::string tlb_kind = "sa";
+    u32 tlb_entries = 64;
+    u32 tlb_ways = 4;
+    u64 max_instr = 0; // 0: run forever
+};
+
+void parse_cmdline(int argc, char* const* argv, const char** bios, const char** kernel, const char** initrd, const char** dtb, const char** append, sim_options* sim)
 {
     static struct option long_options[] = {
         {"kernel", required_argument, 0, 0},
@@ -99,6 +114,10 @@ void parse_cmdline(int argc, char* const* argv, const char** bios, const char** 
         {"dtb", required_argument, 0, 2},
         {"append", required_argument, 0, 3},
         {"bios", required_argument, 0, 4},
+        {"tlb", required_argument, 0, 5},         // off, null, dm, sa, fa
+        {"tlb-entries", required_argument, 0, 6},
+        {"tlb-ways", required_argument, 0, 7},
+        {"max-instr", required_argument, 0, 8},   // stop after this many instructions and print MIPS
         {0, 0, 0, 0}
     };
 
@@ -122,6 +141,18 @@ void parse_cmdline(int argc, char* const* argv, const char** bios, const char** 
         case 4:
             *bios = optarg;
             break;
+        case 5:
+            sim->tlb_kind = optarg;
+            break;
+        case 6:
+            sim->tlb_entries = strtoul(optarg, nullptr, 0);
+            break;
+        case 7:
+            sim->tlb_ways = strtoul(optarg, nullptr, 0);
+            break;
+        case 8:
+            sim->max_instr = strtoull(optarg, nullptr, 0);
+            break;
         case '?':
             printf("unknown option: %s", argv[optind - 1]);
         default:
@@ -138,7 +169,9 @@ int main(int argc, char** argv)
     const char* dtb = 0;
     const char* append = 0;
 
-    parse_cmdline(argc, argv, &bios, &kernel, &initrd, &dtb, &append);
+    sim_options sim;
+
+    parse_cmdline(argc, argv, &bios, &kernel, &initrd, &dtb, &append, &sim);
 
     int instr_per_tick = 1000;
 
@@ -146,6 +179,7 @@ int main(int argc, char** argv)
     mmio prpl(24, 4);
 
     hart hart_0(&mmap, 0, 0x80000000);
+    hart_0.set_tlb(sim.tlb_kind, sim.tlb_entries, sim.tlb_ways);
 
     ram ram0(128 * 1024 * 1024);
 
@@ -231,7 +265,13 @@ int main(int argc, char** argv)
     hart_0.regs[11] = dtb_start;
     hart_0.pc = bios ? bios_start : kernel_start;
 
-    while (1) {
+    signal(SIGUSR1, on_sigusr1);
+
+    u64 instret = 0; // steps, including the ones that trapped
+    auto t0 = std::chrono::steady_clock::now();
+    std::clock_t c0 = std::clock();
+
+    while ((sim.max_instr == 0 || instret < sim.max_instr) && !stop_requested) {
         if (hart_0.waiting) {
             // the hart is parked in WFI. Sleep in the kernel until input arrives or a device deadline passes
             u64 now = host_now_ns();
@@ -256,9 +296,11 @@ int main(int argc, char** argv)
                 uart0.poll_input();
             }
         } else {
-            for (int i = 0; i < instr_per_tick && !hart_0.waiting; i++) {
+            int i;
+            for (i = 0; i < instr_per_tick && !hart_0.waiting; i++) {
                 hart_0.step();
             }
+            instret += i;
         }
 
         mmap.tick();
@@ -267,4 +309,23 @@ int main(int argc, char** argv)
             hart_0.waiting = false;
         }
     }
+
+    double secs = std::chrono::duration<double>(std::chrono::steady_clock::now() - t0).count();
+
+    // cpu time leaves out the time spent sleeping in WFI, so it is the right base for MIPS
+    double cpu_secs = double(std::clock() - c0) / CLOCKS_PER_SEC;
+
+    fprintf(stderr, "\n[rvsim] instructions=%llu seconds=%.3f cpu_seconds=%.3f mips=%.2f",
+            (unsigned long long)instret, secs, cpu_secs, instret / cpu_secs / 1e6);
+    for (auto [name, tlb] : {std::pair{"itlb", hart_0.get_itlb()}, std::pair{"dtlb", hart_0.get_dtlb()}}) {
+        if (tlb) {
+            const TLBStats& st = tlb->stats();
+            u64 total = st.hits + st.misses;
+            fprintf(stderr, " %s_hits=%llu %s_misses=%llu %s_hit_rate=%.4f", name, (unsigned long long)st.hits,
+                    name, (unsigned long long)st.misses, name, total ? (double)st.hits / total : 0.0);
+        }
+    }
+    fprintf(stderr, "\n");
+
+    return 0;
 }

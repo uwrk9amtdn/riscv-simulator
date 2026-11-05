@@ -83,3 +83,46 @@ inline void runtime_error(const std::string& message, const std::source_location
     std::string full_message = message + " [at " + loc.file_name() + ":" + std::to_string(loc.line()) + "]";
     throw std::runtime_error(full_message);
 }
+
+struct bitfield {
+    u32 value{0};
+
+    bitfield() {}
+    bitfield(u32 v) : value{v} {}
+
+    bitfield(const bitfield&) = delete;
+    bitfield& operator=(const bitfield&) = delete;
+
+    bitfield& operator=(u32 v) {
+        value = v;
+        return *this;
+    }
+
+    operator u32() const {
+        return value;
+    }
+
+    bitfield& operator&=(u32 v) {
+        value &= v;
+        return *this;
+    }
+
+    bitfield& operator|=(u32 v) {
+        value |= v;
+        return *this;
+    }
+
+    template <int left, int right = left>
+    struct field_ref {
+        u32* p;
+
+        field_ref& operator=(u32 v) {
+            *p = set_part(*p, left, right, v);
+            return *this;
+        }
+        operator u32() const { return get_part(*p, left, right); }
+    };
+
+    template <int left, int right = left>
+    field_ref<left, right> field() { return {&value}; }
+};

@@ -3,7 +3,17 @@
 #include "common.h"
 #include "mmio.h"
 #include "constants.h"
-#include "cache.h"
+#include "tlb.h"
+
+#include <memory>
+#include <string>
+
+// -DTLB_STATIC=DirectMappedTLB (or another final class) makes the TLB type concrete so lookups inline
+#ifdef TLB_STATIC
+using hart_tlb_t = TLB_STATIC;
+#else
+using hart_tlb_t = TLB;
+#endif
 
 class hart {
 
@@ -21,6 +31,11 @@ public:
 
     void step();
 
+    // kind: off (no lookup at all), null, dm, sa, fa
+    void set_tlb(const std::string& kind, u32 entries, u32 ways);
+    const hart_tlb_t* get_itlb() const { return itlb.get(); }
+    const hart_tlb_t* get_dtlb() const { return dtlb.get(); }
+
     bool waiting = false;
 
     bool wfi_wake_pending() { return (effective_mip() & mie) != 0; }
@@ -28,48 +43,8 @@ public:
     u32 effective_mip() const { return mip | (seip ? 1u << 9 : 0); }
 
 public:
-    struct csr {
-        u32 value{0};
 
-        csr() {}
-        csr(u32 v) : value{v} {}
-
-        csr(const csr&) = delete;
-        csr& operator=(const csr&) = delete;
-
-        csr& operator=(u32 v) {
-            value = v;
-            return *this;
-        }
-
-        operator u32() const {
-            return value;
-        }
-
-        csr& operator&=(u32 v) {
-            value &= v;
-            return *this;
-        }
-
-        csr& operator|=(u32 v) {
-            value |= v;
-            return *this;
-        }
-
-        template <int left, int right = left>
-        struct field_ref {
-            u32* p;
-
-            field_ref& operator=(u32 v) {
-                *p = set_part(*p, left, right, v);
-                return *this;
-            }
-            operator u32() const { return get_part(*p, left, right); }
-        };
-
-        template <int left, int right = left>
-        field_ref<left, right> field() { return {&value}; }
-    };
+    using csr = bitfield;
 
     #define CSR_FIELD(name, bit) auto name() { return field<bit>(); }
     #define CSR_FIELD_R(name, left, right) auto name() { return field<left, right>(); }
@@ -213,6 +188,8 @@ private:
     trap_cause_t access_type_to_access_fault_exception(access_type_t access_type);
     trap_cause_t access_type_to_page_fault_exception(access_type_t access_type);
 
+    void sv32_perm_check(u32 va, u32 u, u32 xwr, access_type_t access_type, u32 priv);
+
     u32 sv32_ptw(u32 va, access_type_t access_type, u32 priv);
 
     u32 resolve_addr(u32 addr, access_type_t access_type);
@@ -233,7 +210,8 @@ private:
     u32 funct3;
     u32 funct7;
 
-    cache<u32, u32> tlb;
+    std::unique_ptr<hart_tlb_t> itlb;
+    std::unique_ptr<hart_tlb_t> dtlb;
 
 private:
     void decode_lui();

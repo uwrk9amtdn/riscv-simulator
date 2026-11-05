@@ -123,7 +123,26 @@ void hart::inst_sfence_vma() {
         throw trap{trap_cause_t::illegal_instruction_exception, inst};
     }
 
-    tlb.flush();
+    std::optional<u32> va;
+    std::optional<u32> asid;
+
+    if (rs1 != 0) {
+        va = regs[rs1];
+    }
+    if (rs2 != 0) {
+        asid = get_part(regs[rs2], 8, 0); // satp.ASID is 9 bits
+    }
+
+    for (hart_tlb_t* tlb : {itlb.get(), dtlb.get()}) {
+        if (!tlb) {
+            continue;
+        }
+        if (!va && !asid) {
+            tlb->flush();
+        } else {
+            tlb->invalidate(va, asid);
+        }
+    }
 
     pc = pc + 4;
 }

@@ -112,8 +112,11 @@ This run also showed the bad data-table case: 12M fast-D fills, against about 2.
 
 ### Next optimizations, cheapest first
 
-1. **Access size as a template parameter** (`load<4>(addr, ...)`). `copy_small`'s switch goes away,
-   and each call site becomes one move. Up to ~5%.
+1. ~~**Access size as a template parameter**~~ (`load<4>(addr, ...)`). Tried and reverted
+   (2026-11-06): 5 alternating A/B pairs gave a median of 136.95 against 137.71 MIPS for the
+   baseline, which is within noise. The ~6% on `hart.h:289` is the `case 4: memcpy` line itself,
+   so those samples were most likely the guest memory read, not a branch on `len`. LTO
+   apparently already folds the constant size.
 2. **Run instructions in batches inside the hart**: `hart::run(n)` loops internally, with the
    `try`/`catch` outside the inner loop (catch, take the trap, keep looping). The main loop calls
    `run(1000)`. Removes most of the ~10% call/loop overhead.

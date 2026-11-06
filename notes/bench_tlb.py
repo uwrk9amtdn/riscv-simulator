@@ -38,7 +38,7 @@ def run_once(rvsim, kind, entries, ways, workload=WORKLOAD, marker=MARKER, timeo
     dtb = os.path.join(ROOT, "build", "soc.dtb")
     if kind == "mmode":  # NOMMU kernel in M-mode, no translation; skip the password login
         cmd = [rvsim, "--kernel", f"{IMG_M}/Image", "--initrd", f"{IMG_M}/rootfs.cpio.gz",
-               "--dtb", dtb, "--tlb=off", "--append", "rdinit=/bin/sh"]
+               "--dtb", dtb, "--append", "rdinit=/bin/sh"]  # no translation in M-mode, the TLB is unused
     else:
         cmd = [rvsim, "--bios", f"{IMG}/fw_jump.bin", "--kernel", f"{IMG}/Image",
                "--initrd", f"{IMG}/rootfs.cpio", "--dtb", dtb,

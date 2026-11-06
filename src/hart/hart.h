@@ -49,6 +49,10 @@ public:
 
     bool waiting = false;
 
+    // drop the LR reservation. With several harts in one thread, done when a hart's quantum ends: another
+    // hart may store to the reserved address before this one runs again
+    void clear_reservation() { reservation_set = false; }
+
     bool wfi_wake_pending() { return (effective_mip() & mie) != 0; }
 
     // reserved bit of irq_lines: not an interrupt, never visible in mip. Wakes a sleeping hart later (stop, debugger)

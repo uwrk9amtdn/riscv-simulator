@@ -105,7 +105,68 @@ before (0.12-0.17 s). Wake latency is 3-7 ms in both. A 3000-byte paste into `wc
 
 ---
 
-## Phase 3: N harts, round-robin in one thread
+## Phase 3: N harts, round-robin in one thread — done 2026-11-06
+
+**Status.** SMP Linux boots and runs on 2 and 4 harts (`smp: Brought up 1 node, 4 CPUs`). Parallel work
+gives correct results, and every hart runs guest code. What differs from the steps below:
+
+- **Device tree: generated, not hand-written.** `patch_fdt()` (main.cpp, `fdt_set_harts()`) rebuilds `/cpus`
+  from the `cpu@0` template in `soc.dts`: `reg = i`, a new phandle for each hart's interrupt controller
+  (after the existing maximum). It also rewrites `interrupts-extended` of the CLINT (`<&intcN 3 &intcN 7>`) and the
+  PLIC (`<&intcN 11 &intcN 9>`) for every hart. libfdt inserts new nodes before the existing children, so
+  the cpu nodes are added in reverse to come out as `cpu@0 .. cpu@N-1`. With one hart the dtb is not
+  touched. `--dump-dtb FILE` writes the final dtb for inspection (`dtc -I dtb -O dts FILE`).
+- **Options:** `--harts N` (1..64; N > 1 needs `--bios`, because OpenSBI parks and starts the other harts)
+  and `--quantum n` (default 1000).
+- **Scheduler** as in 3.2: one quantum per non-waiting hart, `clear_reservation()` after it when N > 1,
+  `mmap.tick()` and a wake check after every quantum. The host sleeps (`host_io`) only when every
+  hart is parked. With one hart the order is the same as before (run, tick, wake check).
+- **Stats** are summed over the harts. With N > 1, SIGUSR1 also prints `instructions_hartN`.
+- **The PLIC needed no change** (context decoding was already generic). The CLINT already took a hart
+  vector.
+
+**Guest images** (`images/s-mode-smp/`; the uniprocessor `images/s-mode/` stays the default, so the
+benchmark baselines don't change):
+
+- `Image`: Linux 7.2 from `~/Desktop/riscv/sw/linux`, the same minimal config plus `CONFIG_SMP=y`,
+  `CONFIG_NR_CPUS=8` (saved as `configs/linux-smp.config`; the previous config is kept there as
+  `.config.up`). Everything else the diff changed is SMP-related (tree RCU, spinning locks, IPI
+  support). Built in place with `make ARCH=riscv CROSS_COMPILE=riscv32-unknown-linux-musl- -j12 Image`.
+- `fw_jump.bin`: OpenSBI 1.9 from `~/Desktop/riscv/sw/opensbi`, with the existing minimal config plus
+  `CONFIG_SBI_ECALL_RFENCE`, `CONFIG_SBI_ECALL_IPI`, `CONFIG_SBI_ECALL_HSM` (the old config is kept as
+  `build/platform/generic/kconfig/.config.minimal`). The old firmware only offered `time,base`. An SMP kernel then
+  hangs right after `Freeing initrd memory` even on one hart, because it needs RFENCE for remote TLB flushes.
+  Build: `make PLATFORM=generic PLATFORM_RISCV_XLEN=32 PLATFORM_RISCV_ISA=rv32ima_zicsr_zifencei
+  PLATFORM_RISCV_ABI=ilp32 CROSS_COMPILE=riscv32-unknown-linux-musl-`. **Gotcha:** after a config change, run
+  `make ... clean` first. The generated extension list (`build/lib/sbi/sbi_ecall_exts.carray.c`) is not
+  regenerated otherwise, and the firmware comes out byte-identical.
+- The rootfs is unchanged (`images/s-mode/rootfs.cpio`): SMP is a kernel-only change. A buildroot
+  rebuild with the host toolchain would need `rsync` on the host and a local option for GCC 16 (this
+  buildroot's external-toolchain choice stops at 15, and it checks the major version exactly).
+
+**Checks (done):**
+
+- 1 hart: `--check` passes, the idle / wake / 3000-byte paste test is the same as before, and speed is
+  within noise (188.73 vs 192.19 MIPS).
+- 2 harts with the uniprocessor kernel and the old firmware: OpenSBI reports 2 harts, parks hart 1, and
+  the kernel boots on one.
+- SMP kernel on 2 and 4 harts: `/proc/cpuinfo` and `/sys/devices/system/cpu/online` show all CPUs. One
+  busy loop per CPU spreads evenly (each hart 532-562M instructions).
+- Stress on 4 harts: the shell loop count, the shell arithmetic, 8 parallel `dd | md5sum` (all equal
+  the md5 of 4 MiB of zeros) and 8 parallel `md5sum /bin/busybox` (all equal the known value). No
+  oops, panic, RCU stall, hung task or segfault.
+- `--quantum 100` and `10000` on 2 harts: same correct results. 10000 is faster (262.6 vs 197.6
+  aggregate MIPS in one run), because devices tick and harts switch less often.
+- Idle with 4 SMP harts: the host sleeps, but uses 0.40 s CPU per 5 s (1 hart: 0.12-0.14 s). Each CPU
+  takes its own 250 Hz timer tick. `CONFIG_NO_HZ_IDLE` in the kernel would remove most of these wakeups.
+
+**Run:**
+
+```
+build/rvsim --bios images/s-mode-smp/fw_jump.bin --kernel images/s-mode-smp/Image \
+    --initrd images/s-mode/rootfs.cpio --dtb build/soc.dtb --harts 4
+```
+
 
 Goal: boot SMP Linux with `--harts N` and no host threads. This mode stays the default, and it is the reference for debugging.
 

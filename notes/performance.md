@@ -119,8 +119,7 @@ This run also showed the bad data-table case: 12M fast-D fills, against about 2.
    apparently already folds the constant size.
 2. ~~**Run instructions in batches inside the hart**~~. Done, +10.8%, see below.
 3. ~~**Check interrupts only when something changes**~~. Done, +12.0%, see below.
-4. **Fix the fast-D conflict case**: a hashed index (`(vpn ^ vpn >> 8) & mask`) or 2 ways, so runs
-   are consistent.
+4. ~~**Fix the fast-D conflict case**~~. Investigated and dropped, see below.
 5. **Decoded-instruction cache**, the largest change and the largest gain (targets the ~30% in
    decode and dispatch). Per RAM code page, cache a decoded entry per instruction (handler, `rd`,
    `rs1`, `rs2`, sign-extended `imm`). Builds on the fetch-page cache. Stores to a page with
@@ -155,6 +154,34 @@ Suggested order: 1 → 2 → 3, measuring after each, then 4, then 5 as its own 
 | **+ `irq_dirty`** | 174.46 173.24 170.16 174.50 177.21 | **174.46** | +12.0% |
 
 Total +24%. All runs were clean, and the M-mode image runs at 160.16 MIPS.
+
+## Fast-D conflicts: investigated, not fixed (2026-11-06)
+
+**Cause, confirmed with a diagnostic build** that counted fills per `fast_d` index and kept the
+last two pages per index. Runs 0-13 were normal (2.41-2.51M fills). Run 14 had 5.69M fills:
+index 153 took 1.83M fills alternating between pages `0x7ad99`/`0x9d799`, and index 154 took
+1.44M fills between `0x7ad9a`/`0x9d79a`. These are two 2-page user buffers a multiple of 1 MiB
+apart, so a copy between them evicts the other entry on every access. The placement is random
+(guest ASLR). That's also why a hashed index wouldn't help: any index makes two random pages
+collide with the same 1/256 probability. Normal runs also have a fixed kernel conflict
+(`0xc07c6`/`0xc01c6` and a few similar pairs, ~200K fills each).
+
+**Frequency**: the bad case appeared in about 1 of 15 runs (1 of 23 in this session). It costs
+~10% in that run, so under 1% on average.
+
+**Both fixes cost more than they gain** (5 alternating pairs each, all runs clean):
+
+| variant | median MIPS | baseline in the same A/B | median / max fills |
+|---|---|---|---|
+| 2-way, 128 sets, both ways checked inline | 147.21 | 154.12 | 2.36M / 2.37M (base 2.49M / 4.47M) |
+| 2-way, 256 sets, only way 0 inline; `load_slow`/`store_slow` check way 1 and swap it in | 167.83 | 173.58 | 2.34M / 2.35M (base 2.50M / 2.64M) |
+
+Both remove the conflicts (fills are stable and ~6% lower), but they are 3-4.5% slower in every
+run. In the second variant the inline hit path is unchanged, so the cost is most likely the layout
+(way-0 entries 32 bytes apart, twice the cache lines) and clearing a 2x larger table on each of the
+~311K flushes. Even at zero overhead the gain would be about 1%, below what can be measured
+reliably here, so the direct-mapped table stays. Revisit if flushes get cheaper (for example a
+generation counter in the tags) or if a workload with a persistent conflict shows up.
 
 ## How to run
 

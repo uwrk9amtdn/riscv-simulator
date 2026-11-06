@@ -226,6 +226,46 @@ Next step if needed: a per-physical-page decoded array (found through the fetch-
 have no conflict or capacity misses and no index masking. Or basic blocks, which need
 store-side invalidation.
 
+## common.h helpers instead of raw bit operations, and PGO (2026-11-06)
+
+The bit operations added in this work now use the `common.h` helpers (`get_part`, `get_bit`, with
+`oright` to place values), the same as the rest of the code. The exception is 4 lines in `execute()`.
+Behavior is unchanged: every replacement is an exact identity for the values involved, and
+`--check` passes.
+
+**Which helper calls compile differently**: the committed code, plus one replacement at a time,
+built with the same flags. Then the machine code is compared per function (addresses and padding
+normalized):
+
+| replacement | effect on the generated code |
+|---|---|
+| `rd`/`rs1`/`rs2` in `execute()` | **about 5 extra instructions per guest instruction**: GCC keeps `get_part`'s `(x << a) >> b` shift pair, and each pair needs a copy of `inst` (`mov`/`shl`/`shr`) |
+| decode-cache index in `execute()` | same count (`shl`+`shr` instead of `shr`+`and`), register allocation shifts elsewhere in `main` |
+| context key (`fast_check_context`) | +2 instructions, only on traps and CSR writes |
+| superpage check in `tlb.h` `invalidate` | +3: `get_part(vpn, 19, 10)` also clears bits above 19, which GCC can't prove are zero. Only on `sfence.vma` |
+| G bit in `tlb.h` | swapped compare operands, +1 instruction in `sc.w`, rare paths |
+| everything else (fetch, load/store hit paths, `fast_fill`, TLB hit PA, walker, VPN shifts in `tlb.h`) | identical code |
+
+So `execute()` keeps raw shifts for `rd`/`rs1`/`rs2` and the index, with a comment. Measured
+(6 rounds): helpers everywhere is 4-5% slower, helpers except `execute()` is the same speed. As a
+side note, rewriting `get_part` itself as shift-then-mask (identical results, checked on 3.4M
+cases) was not a fix: it made the whole build 3-4.5% slower, through inlining and layout changes
+elsewhere.
+
+**PGO** (`-fprofile-generate` → training run → `-fprofile-use`, with LTO, trained on the
+`--check` workload rather than the benchmark itself, so the result isn't tuned to the test):
+
+| build | median MIPS (5 rounds) |
+|---|---|
+| **final (no PGO)** | **200.33** |
+| final + PGO | 194.75 |
+| helpers everywhere | 188.04 |
+| helpers everywhere + PGO | 189.68 |
+
+PGO doesn't help (the final + PGO build lost 3 of 5 pairs, one outlier at 175.77). It also doesn't
+remove the helpers-everywhere gap, which fits the extra instructions in `execute()` being real work
+rather than layout. Not enabled.
+
 ## How to run
 
 The default build is devirtualized (`RVSIM_TLB_STATIC=DirectMappedTLB`, so only `--tlb=dm` is

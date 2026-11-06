@@ -214,7 +214,6 @@ private:
     // satp), so they are flushed when it changes. Loads/stores are aligned, so an access never
     // crosses a page
     static constexpr u32 FAST_TLB_BITS = 8;
-    static constexpr u32 FAST_TLB_MASK = (1u << FAST_TLB_BITS) - 1;
     static constexpr u32 FAST_TLB_INVALID = ~0u; // never equal to a 20 bit vpn
 
     struct fast_i_entry { u32 tag_x; uintptr_t addend; };          // host address = addend + va
@@ -231,13 +230,13 @@ private:
 
     void fetch()
     {
-        u32 vpn = pc >> 12;
+        u32 vpn = get_part(pc, 31, 12);
         if (vpn == fetch_vpn) [[likely]] {
             memcpy(&inst, (const u8*)(fetch_addend + pc), 4);
             return;
         }
         load(pc, 4, (u8*)&inst, access_type_t::x);
-        const fast_i_entry& e = fast_i[vpn & FAST_TLB_MASK];
+        const fast_i_entry& e = fast_i[get_part(vpn, FAST_TLB_BITS - 1, 0)];
         if (e.tag_x == vpn) { // the page is RAM and passed the execute check
             fetch_vpn = vpn;
             fetch_addend = e.addend;
@@ -254,8 +253,8 @@ private:
 
     void load(u32 addr, u32 len, u8* data, access_type_t access_type = access_type_t::r)
     {
-        u32 vpn = addr >> 12;
-        u32 i = vpn & FAST_TLB_MASK;
+        u32 vpn = get_part(addr, 31, 12);
+        u32 i = get_part(vpn, FAST_TLB_BITS - 1, 0);
         if (access_type == access_type_t::x) {
             if (fast_i[i].tag_x == vpn) [[likely]] {
                 copy_small(data, (const u8*)(fast_i[i].addend + addr), len);
@@ -273,8 +272,8 @@ private:
 
     void store(u32 addr, u32 len, const u8* data, access_type_t access_type = access_type_t::w)
     {
-        u32 vpn = addr >> 12;
-        u32 i = vpn & FAST_TLB_MASK;
+        u32 vpn = get_part(addr, 31, 12);
+        u32 i = get_part(vpn, FAST_TLB_BITS - 1, 0);
         if (fast_d[i].tag_w == vpn) [[likely]] {
             copy_small((u8*)(fast_d[i].addend + addr), data, len);
             return;
@@ -356,7 +355,6 @@ private:
     };
 
     static constexpr u32 DCACHE_BITS = 18;
-    static constexpr u32 DCACHE_MASK = (1u << DCACHE_BITS) - 1;
     std::unique_ptr<decoded[]> dcache;
     u64 decodes = 0;
 

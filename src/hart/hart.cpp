@@ -70,7 +70,9 @@ void hart::execute()
 {
     fetch();
 
-    decoded& d = dcache[(pc >> 2) & DCACHE_MASK];
+    // raw shifts instead of get_part on this per-instruction path: GCC keeps get_part's shift pair
+    // here, which needs a copy of inst per field (~5 extra instructions, ~5% slower, see notes/performance.md)
+    decoded& d = dcache[(pc >> 2) & ((1u << DCACHE_BITS) - 1)];
     if (d.raw != inst) [[unlikely]] {
         decode_into(d);
     }
@@ -410,7 +412,7 @@ u32 hart::sv32_ptw(u32 va, access_type_t access_type, u32 priv) {
             e.super = i == 1;
             e.vpn   = get_part(va, 31, 12);
             // a superpage is cached as the 4 KiB piece that was accessed, so indexed TLBs can use the low vpn bits
-            e.ppn   = i == 1 ? (get_part(pte, 29, 20) << 10 | vpn[0]) : get_part(pte, 29, 10);
+            e.ppn   = i == 1 ? (get_part(pte, 29, 20, 10) | vpn[0]) : get_part(pte, 29, 10);
 
             tlb->insert(e);
         }
@@ -451,7 +453,7 @@ u32 hart::resolve_addr(u32 addr, access_type_t access_type) {
             // entries are only inserted with A set. A write to a clean page is a miss so the walker sets D
             if (access_type != access_type_t::w || get_bit(e->flags, 7)) {
                 sv32_perm_check(addr, get_bit(e->flags, 4), get_part(e->flags, 3, 1), access_type, _priv);
-                return e->ppn << 12 | get_part(addr, 11, 0);
+                return get_part(e->ppn, 19, 0, 12) | get_part(addr, 11, 0);
             }
         }
     }
@@ -499,7 +501,7 @@ void hart::fast_flush()
 void hart::fast_check_context()
 {
     u32 dpriv = mstatus.MPRV() ? (u32)mstatus.MPP() : priv;
-    u32 key = priv | dpriv << 2 | (u32)mstatus.SUM() << 4 | (u32)mstatus.MXR() << 5;
+    u32 key = get_part(priv, 1, 0) | get_part(dpriv, 1, 0, 2) | get_part(mstatus.SUM(), 0, 0, 4) | get_part(mstatus.MXR(), 0, 0, 5);
     if (key != fast_key) {
         fast_key = key;
         fast_flush();
@@ -510,14 +512,14 @@ void hart::fast_check_context()
 // Only pages that lie completely in RAM are cached, everything else keeps going through mmio
 void hart::fast_fill(access_type_t access_type, u32 va, u32 pa)
 {
-    u32 off = (pa & ~0xfffu) - ram_base;
+    u32 off = get_part(pa, 31, 12, 12) - ram_base;
     if (!(off < ram_size && ram_size - off >= 4096)) {
         return;
     }
 
-    u32 vpn = va >> 12;
-    u32 i = vpn & FAST_TLB_MASK;
-    uintptr_t addend = (uintptr_t)(ram_host + off) - (uintptr_t)(va & ~0xfffu);
+    u32 vpn = get_part(va, 31, 12);
+    u32 i = get_part(vpn, FAST_TLB_BITS - 1, 0);
+    uintptr_t addend = (uintptr_t)(ram_host + off) - (uintptr_t)get_part(va, 31, 12, 12);
 
     switch (access_type) {
         case access_type_t::x:

@@ -43,8 +43,6 @@ protected:
 
 namespace tlb_detail {
 
-constexpr u32 FLAG_G = 1u << 5;
-
 struct slot {
     TLBEntry e;
     bool valid = false;
@@ -53,12 +51,12 @@ struct slot {
 inline bool is_pow2(u32 n) { return n != 0 && (n & (n - 1)) == 0; }
 
 inline bool matches(const slot& s, u32 vpn, u32 asid) {
-    return s.valid && s.e.vpn == vpn && ((s.e.flags & FLAG_G) || s.e.asid == asid);
+    return s.valid && s.e.vpn == vpn && (get_bit(s.e.flags, 5) || s.e.asid == asid);
 }
 
 // same page and same address space (used to replace instead of duplicate on insert)
 inline bool same_mapping(const slot& s, const TLBEntry& e) {
-    return s.valid && s.e.vpn == e.vpn && (((s.e.flags | e.flags) & FLAG_G) || s.e.asid == e.asid);
+    return s.valid && s.e.vpn == e.vpn && (get_bit(s.e.flags | e.flags, 5) || s.e.asid == e.asid);
 }
 
 // storage + the SFENCE logic shared by every organisation. SFENCE is rare, so invalidation always scans
@@ -69,12 +67,12 @@ public:
             if (!s.valid) {
                 continue;
             }
-            if (asid && ((s.e.flags & FLAG_G) || s.e.asid != *asid)) {
+            if (asid && (get_bit(s.e.flags, 5) || s.e.asid != *asid)) {
                 continue; // an ASID-specific fence keeps global mappings and other address spaces
             }
             if (va) {
-                u32 vpn = *va >> 12;
-                bool hit = s.e.super ? (s.e.vpn >> 10) == (vpn >> 10) : s.e.vpn == vpn;
+                u32 vpn = get_part(*va, 31, 12);
+                bool hit = s.e.super ? get_part(s.e.vpn, 19, 10) == get_part(vpn, 19, 10) : s.e.vpn == vpn;
                 if (!hit) {
                     continue;
                 }
@@ -129,7 +127,7 @@ public:
     DirectMappedTLB(u32 entries, u32 = 1) : array_tlb(entries), mask(entries - 1) {}
 
     std::optional<TLBEntry> lookup(u32 va, u32 asid) const override {
-        u32 vpn = va >> 12;
+        u32 vpn = get_part(va, 31, 12);
         const auto& s = slots[vpn & mask];
         return tlb_detail::matches(s, vpn, asid) ? hit(s) : miss();
     }
@@ -153,7 +151,7 @@ public:
     }
 
     std::optional<TLBEntry> lookup(u32 va, u32 asid) const override {
-        u32 vpn = va >> 12;
+        u32 vpn = get_part(va, 31, 12);
         const tlb_detail::slot* set = &slots[(vpn & set_mask) * ways];
         for (u32 w = 0; w < ways; w++) {
             if (tlb_detail::matches(set[w], vpn, asid)) {
@@ -195,7 +193,7 @@ public:
     FullyAssocTLB(u32 entries, u32 = 0) : array_tlb(entries) {}
 
     std::optional<TLBEntry> lookup(u32 va, u32 asid) const override {
-        u32 vpn = va >> 12;
+        u32 vpn = get_part(va, 31, 12);
         if (tlb_detail::matches(slots[mru], vpn, asid)) {
             return hit(slots[mru]);
         }

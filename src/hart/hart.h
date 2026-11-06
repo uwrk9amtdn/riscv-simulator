@@ -5,6 +5,7 @@
 #include "constants.h"
 #include "tlb.h"
 
+#include <atomic>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -50,7 +51,11 @@ public:
 
     bool wfi_wake_pending() { return (effective_mip() & mie) != 0; }
 
-    u32 effective_mip() const { return mip | (seip ? 1u << 9 : 0); }
+    // reserved bit of irq_lines: not an interrupt, never visible in mip. Wakes a sleeping hart later (stop, debugger)
+    static constexpr u32 LINE_KICK = 1u << 31;
+
+    // mip as software sees it: the bits the hart writes itself plus the external lines
+    u32 effective_mip() const { return mip | (irq_lines.load(std::memory_order_acquire) & ~LINE_KICK); }
 
 public:
 
@@ -281,7 +286,12 @@ private:
         store_slow(addr, len, data, access_type);
     }
 
-    bool seip = false;
+    // external interrupt lines, driven by devices: MEIP and SEIP (PLIC), MTIP and MSIP (CLINT). Atomic, so
+    // with threaded harts another thread can raise them. mip only keeps the bits the hart writes itself
+    // (SSIP, STIP, software SEIP), so MEIP/MTIP/MSIP are never set in mip
+    std::atomic<u32> irq_lines{0};
+
+    void set_line(u32 bit, bool level);
 
     // set by everything that can change which interrupt is pending and enabled (set_*ip, CSR access,
     // trap entry, mret/sret). run() only does the full interrupt check when it is set

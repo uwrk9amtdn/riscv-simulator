@@ -231,22 +231,32 @@ void hart::step()
     run(1);
 }
 
+void hart::set_line(u32 bit, bool level)
+{
+    if (level) {
+        u32 old = irq_lines.fetch_or(bit, std::memory_order_release);
+        if (!(old & bit)) {
+            irq_lines.notify_one(); // only on a 0 -> 1 edge; a hart sleeping in WFI waits on this word later
+        }
+    } else {
+        irq_lines.fetch_and(~bit, std::memory_order_release); // clearing a line never wakes anyone
+    }
+    irq_dirty = true; // TODO(multicore): set from another thread, so this must become atomic too
+}
+
 void hart::set_meip(bool level)
 {
-    mip.MEIP() = level;
-    irq_dirty = true;
+    set_line(1u << 11, level);
 }
 
 void hart::set_seip(bool level)
 {
-    seip = level;
-    irq_dirty = true;
+    set_line(1u << 9, level);
 }
 
 void hart::set_mtip(bool level)
 {
-    mip.MTIP() = level;
-    irq_dirty = true;
+    set_line(1u << 7, level);
 }
 
 void hart::set_stip(bool level)
@@ -257,8 +267,7 @@ void hart::set_stip(bool level)
 
 void hart::set_msip(bool level)
 {
-    mip.MSIP() = level;
-    irq_dirty = true;
+    set_line(1u << 3, level);
 }
 
 void hart::set_ssip(bool level)

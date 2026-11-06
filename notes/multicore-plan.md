@@ -35,7 +35,17 @@ If each hart computed its own wake deadline, hart code would have to know about 
 
 ---
 
-## Phase 1: interrupt lines in one atomic word (single hart, no behavior change)
+## Phase 1: interrupt lines in one atomic word (single hart, no behavior change) — done 2026-11-06
+
+Done as described below, with one addition: `set_line()` also sets `irq_dirty` (the interrupt check
+only runs when it is set, see performance.md). That's still a plain `bool`. With threads, a line
+raised by another thread has to reach the running hart, so phase 4 must make it atomic, or have
+`run()` also compare `irq_lines` with the value it last checked (one relaxed load per instruction,
+a plain `mov` on x86). There's a `TODO(multicore)` at `set_line()`. Steps 6 (MEIP/MTIP/MSIP not
+writable in `mip`) and 5 (SSIP/STIP stay in `mip`) were already true. Check: `--check`, the idle /
+wake / 3000-byte paste test and the M-mode image pass, and speed is the same within noise
+(124.91 vs 126.61 MIPS, alternated A/B).
+
 
 Goal: replace `bool seip` with a general word for external lines. The machine should behave exactly as it does today.
 

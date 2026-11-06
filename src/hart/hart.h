@@ -6,6 +6,7 @@
 #include "tlb.h"
 
 #include <atomic>
+#include <mutex>
 #include <cstring>
 #include <memory>
 #include <string>
@@ -168,8 +169,11 @@ public:
 private:
     mmio* mmio_ = 0;
 
+    // LR/SC: LR records the physical address and the value it loaded. SC succeeds if the word still holds that
+    // value (one compare-exchange), so it also works when other harts run in other threads
     bool reservation_set = false;
     u32 reserved_addr = 0;
+    u32 reserved_value = 0;
 
     void csr_rw(u32 csr, u32 rm, u32 wm, u32& rd, u32 wd);
 
@@ -241,7 +245,7 @@ private:
     {
         u32 vpn = get_part(pc, 31, 12);
         if (vpn == fetch_vpn) [[likely]] {
-            memcpy(&inst, (const u8*)(fetch_addend + pc), 4);
+            guest_read((u8*)&inst, (const u8*)(fetch_addend + pc), 4);
             return;
         }
         load(pc, 4, (u8*)&inst, access_type_t::x);
@@ -266,13 +270,13 @@ private:
         u32 i = get_part(vpn, FAST_TLB_BITS - 1, 0);
         if (access_type == access_type_t::x) {
             if (fast_i[i].tag_x == vpn) [[likely]] {
-                copy_small(data, (const u8*)(fast_i[i].addend + addr), len);
+                guest_read(data, (const u8*)(fast_i[i].addend + addr), len);
                 return;
             }
         } else {
             u32 tag = access_type == access_type_t::r ? fast_d[i].tag_r : fast_d[i].tag_w;
             if (tag == vpn) [[likely]] {
-                copy_small(data, (const u8*)(fast_d[i].addend + addr), len);
+                guest_read(data, (const u8*)(fast_d[i].addend + addr), len);
                 return;
             }
         }
@@ -284,7 +288,7 @@ private:
         u32 vpn = get_part(addr, 31, 12);
         u32 i = get_part(vpn, FAST_TLB_BITS - 1, 0);
         if (fast_d[i].tag_w == vpn) [[likely]] {
-            copy_small((u8*)(fast_d[i].addend + addr), data, len);
+            guest_write((u8*)(fast_d[i].addend + addr), data, len);
             return;
         }
         store_slow(addr, len, data, access_type);
@@ -298,41 +302,68 @@ private:
     void set_line(u32 bit, bool level);
 
     // set by everything that can change which interrupt is pending and enabled (set_*ip, CSR access,
-    // trap entry, mret/sret). run() only does the full interrupt check when it is set
-    bool irq_dirty = true;
+    // trap entry, mret/sret). run() only does the full interrupt check when it is set. Other threads set it
+    // after publishing a line (release); run() claims it with an exchange (acq_rel) before checking, so a line
+    // raised while the check runs leaves the flag set instead of getting lost
+    std::atomic<bool> irq_dirty{true};
+
+    // atomic read-modify-write of the aligned word at va: op(old) -> new, returns old. seq_cst, which also
+    // covers .aq/.rl
+    template <typename F>
+    u32 amo(u32 va, F op);
 
     u32 ram_base = 0;
     u32 ram_size = 0;
     u8* ram_host = nullptr;
 
     // physical bus access: RAM fast path, otherwise the mmio tree. len is 1, 2 or 4
-    static inline void copy_small(u8* dst, const u8* src, u32 len)
+    // guest RAM is shared between harts, which may run in different threads. Accesses are always aligned
+    // (misaligned ones trap, and pc is 4-aligned), so 1/2/4-byte accesses are relaxed atomics. On x86 they
+    // compile to the same plain moves
+    static inline void guest_read(u8* dst, const u8* guest, u32 len)
     {
         switch (len) {
-            case 4: memcpy(dst, src, 4); break;
-            case 2: memcpy(dst, src, 2); break;
-            case 1: *dst = *src; break;
-            default: memcpy(dst, src, len); break;
+            case 4: { u32 v = std::atomic_ref<u32>(*(u32*)guest).load(std::memory_order_relaxed); memcpy(dst, &v, 4); break; }
+            case 2: { u16 v = std::atomic_ref<u16>(*(u16*)guest).load(std::memory_order_relaxed); memcpy(dst, &v, 2); break; }
+            case 1: *dst = std::atomic_ref<u8>(*(u8*)guest).load(std::memory_order_relaxed); break;
+            default: memcpy(dst, guest, len); break;
         }
+    }
+
+    static inline void guest_write(u8* guest, const u8* src, u32 len)
+    {
+        switch (len) {
+            case 4: { u32 v; memcpy(&v, src, 4); std::atomic_ref<u32>(*(u32*)guest).store(v, std::memory_order_relaxed); break; }
+            case 2: { u16 v; memcpy(&v, src, 2); std::atomic_ref<u16>(*(u16*)guest).store(v, std::memory_order_relaxed); break; }
+            case 1: std::atomic_ref<u8>(*guest).store(*src, std::memory_order_relaxed); break;
+            default: memcpy(guest, src, len); break;
+        }
+    }
+
+    // host pointer of a physical RAM address with len bytes, nullptr if it isn't RAM
+    u8* ram_ptr(u32 pa, u32 len)
+    {
+        u32 off = pa - ram_base; // wraps for pa < ram_base, so one compare covers both bounds
+        return off < ram_size && len <= ram_size - off ? ram_host + off : nullptr;
     }
 
     bool bus_load(u32 pa, u32 len, u8* data)
     {
-        u32 off = pa - ram_base; // wraps for pa < ram_base, so one compare covers both bounds
-        if (off < ram_size && len <= ram_size - off) [[likely]] {
-            copy_small(data, ram_host + off, len);
+        if (u8* p = ram_ptr(pa, len)) [[likely]] {
+            guest_read(data, p, len);
             return true;
         }
+        std::lock_guard<std::mutex> lock(mmio_->lock);
         return mmio_->load(pa, len, data);
     }
 
     bool bus_store(u32 pa, u32 len, const u8* data)
     {
-        u32 off = pa - ram_base;
-        if (off < ram_size && len <= ram_size - off) [[likely]] {
-            copy_small(ram_host + off, data, len);
+        if (u8* p = ram_ptr(pa, len)) [[likely]] {
+            guest_write(p, data, len);
             return true;
         }
+        std::lock_guard<std::mutex> lock(mmio_->lock);
         return mmio_->store(pa, len, data);
     }
 

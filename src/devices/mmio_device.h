@@ -26,5 +26,17 @@ public:
     virtual void host_fds(std::vector<host_fd>& out) { (void)out; }
     // one of the device's fds is readable: take what it can, never block
     virtual void poll_input() {}
+
+    // a device calls this when its next_deadline_ns() may have moved earlier or its host_fds() changed
+    // (e.g. a CLINT mtimecmp write, a UART RBR read). With threads, the I/O thread may be asleep with an old
+    // timeout or fd set and must recompute them. host_io sets the hook; without threads it stays empty
+    static inline void (*host_changed_hook)(void*) = nullptr;
+    static inline void* host_changed_ctx = nullptr;
+    static void notify_host_changed()
+    {
+        if (host_changed_hook) {
+            host_changed_hook(host_changed_ctx);
+        }
+    }
     virtual ~mmio_device() {};
 };

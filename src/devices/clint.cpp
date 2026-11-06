@@ -150,6 +150,7 @@ bool clint::store(u32 addr, u32 len, const u8* data)
             } else {
                 harts[hart_id]->set_mtip(0);
             }
+            notify_host_changed(); // the next timer deadline may be earlier now
         }
 
         return true;
@@ -180,6 +181,7 @@ bool clint::store(u32 addr, u32 len, const u8* data)
         }
 
         mtime_offset += mtime - cur;
+        notify_host_changed();
 
         for (u32 i = 0; i < harts.size(); i++) {
             if (mtimecmp[i] <= mtime) {

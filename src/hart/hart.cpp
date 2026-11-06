@@ -198,7 +198,7 @@ void hart::take_trap(const trap& t)
     }
 
     fast_check_context();
-    irq_dirty = true; // priv and MIE/SIE changed
+    irq_dirty.store(true, std::memory_order_relaxed); // priv and MIE/SIE changed
 }
 
 // runs up to n steps (a step that traps counts too) or until WFI parks the hart. The try block is
@@ -206,12 +206,12 @@ void hart::take_trap(const trap& t)
 u32 hart::run(u32 n)
 {
     u32 i = 0;
-    irq_dirty = true; // devices ticked between batches, check once even if nothing marked it
+    irq_dirty.store(true, std::memory_order_relaxed); // devices ticked between batches, check once even if nothing marked it
     while (i < n && !waiting) {
         try {
             for (; i < n && !waiting; i++) {
-                if (irq_dirty) [[unlikely]] {
-                    irq_dirty = false;
+                if (irq_dirty.load(std::memory_order_relaxed)) [[unlikely]] {
+                    irq_dirty.exchange(false, std::memory_order_acq_rel);
                     check_interrupts();
                 }
                 execute();
@@ -241,7 +241,7 @@ void hart::set_line(u32 bit, bool level)
     } else {
         irq_lines.fetch_and(~bit, std::memory_order_release); // clearing a line never wakes anyone
     }
-    irq_dirty = true; // TODO(multicore): set from another thread, so this must become atomic too
+    irq_dirty.store(true, std::memory_order_release); // may be another thread: after the line, see irq_dirty
 }
 
 void hart::set_meip(bool level)
@@ -262,7 +262,7 @@ void hart::set_mtip(bool level)
 void hart::set_stip(bool level)
 {
     mip.STIP() = level;
-    irq_dirty = true;
+    irq_dirty.store(true, std::memory_order_relaxed);
 }
 
 void hart::set_msip(bool level)
@@ -273,7 +273,7 @@ void hart::set_msip(bool level)
 void hart::set_ssip(bool level)
 {
     mip.SSIP() = level;
-    irq_dirty = true;
+    irq_dirty.store(true, std::memory_order_relaxed);
 }
 
 hart::trap_cause_t hart::access_type_to_access_fault_exception(access_type_t access_type)
@@ -362,11 +362,17 @@ u32 hart::sv32_ptw(u32 va, access_type_t access_type, u32 priv) {
         // TODO: should we throw access fault
     }
 
+    u32 root_ppa = ppa;
+
+restart:
+    ppa = root_ppa;
+
     for (int i = 1; i >= 0; i--) {
         u32 a = ppa + vpn[i] * 4;
         if (!bus_load(a, 4, (u8*)&pte)) {
             throw trap{access_fault_exception, va};
         }
+        u32 pte_loaded = pte;
 
         u32 v = get_bit(pte, 0);
         u32 xwr = get_part(pte, 3, 1);
@@ -404,9 +410,14 @@ u32 hart::sv32_ptw(u32 va, access_type_t access_type, u32 priv) {
             store = true;
         }
 
-        // TODO: PTE update must be atomic. Will not be issue in a single core simulator. Will be implemented later
+        // the A/D update must not overwrite a PTE that another hart (or the kernel on another hart) changed
+        // since it was read: compare-exchange, and walk again if it lost
         if (store) {
-            if (!bus_store(a, 4, (u8*)&pte)) {
+            if (u8* p = ram_ptr(a, 4)) {
+                if (!std::atomic_ref<u32>(*(u32*)p).compare_exchange_strong(pte_loaded, pte, std::memory_order_seq_cst)) {
+                    goto restart;
+                }
+            } else if (!bus_store(a, 4, (u8*)&pte)) {
                 throw trap{access_fault_exception, va};
             }
         }

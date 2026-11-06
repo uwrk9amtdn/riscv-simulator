@@ -11,6 +11,7 @@ hart::handler_t hart::decode_misc_mem()
 }
 
 void hart::inst_fence() {
+    std::atomic_thread_fence(std::memory_order_seq_cst); // other harts may run in other threads
     pc = pc + 4;
 }
 

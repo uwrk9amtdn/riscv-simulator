@@ -124,6 +124,7 @@ bool uart::load(u32 addr, u32 len, u8* data)
             update = true;
             rx_timed_out = false;
             rx_deadline_ns = host_now_ns() + RX_TIMEOUT_NS;
+            notify_host_changed(); // new timeout deadline, and the receiver may have room again (host_fds)
             if (fcr & UART_FCR_ENABLE_FIFO) {
                 if (rx_queue.empty()) {
                     val = 0;
@@ -232,6 +233,7 @@ bool uart::store(u32 addr, u32 len, const u8* data)
         }
 
     case UART_IER:
+        notify_host_changed();
         if (lcr & UART_LCR_DLAB) {
             dlm = val;
         } else {
@@ -241,6 +243,7 @@ bool uart::store(u32 addr, u32 len, const u8* data)
         break;
 
     case UART_FCR:
+        notify_host_changed();
         update = true;
         if ((fcr ^ val) & UART_FCR_ENABLE_FIFO) {
             while (!rx_queue.empty()) {
@@ -269,6 +272,7 @@ bool uart::store(u32 addr, u32 len, const u8* data)
         break;
 
     case UART_MCR:
+        notify_host_changed(); // loopback mode changes whether input is taken (host_fds)
         mcr = val & 0x1f;
         break;
 

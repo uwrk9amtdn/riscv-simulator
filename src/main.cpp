@@ -457,7 +457,10 @@ int main(int argc, char** argv)
                 h->clear_reservation();
             }
 
-            mmap.tick();
+            {
+                std::lock_guard<std::mutex> lock(mmap.lock);
+                mmap.tick();
+            }
             wake_ready();
 
             if ((sim.max_instr != 0 && instret >= sim.max_instr) || stop_requested) {
@@ -467,7 +470,10 @@ int main(int argc, char** argv)
 
         if (all_waiting) {
             io.wait_until_event(); // every hart is parked in WFI: sleep until host input or a device deadline
-            mmap.tick();
+            {
+                std::lock_guard<std::mutex> lock(mmap.lock);
+                mmap.tick();
+            }
             wake_ready();
         }
     }

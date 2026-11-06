@@ -41,6 +41,9 @@ public:
     // through the mmio tree. The region must not be shared with any other device
     void set_ram(u32 base, u32 size, u8* host) { ram_base = base; ram_size = size; ram_host = host; }
 
+    struct fast_tlb_stats_t { u64 ifills = 0, dfills = 0, flushes = 0; };
+    const fast_tlb_stats_t& get_fast_tlb_stats() const { return fast_stats; }
+
     bool waiting = false;
 
     bool wfi_wake_pending() { return (effective_mip() & mie) != 0; }
@@ -199,8 +202,59 @@ private:
 
     u32 resolve_addr(u32 addr, access_type_t access_type);
 
-    void load(u32 addr, u32 len, u8* data, access_type_t access_type = access_type_t::r);
-    void store(u32 addr, u32 len, const u8* data, access_type_t access_type = access_type_t::w);
+    // Fast TLB in front of resolve_addr + bus: guest VPN -> host pointer for RAM pages, with a tag per
+    // access type that is only set after that access passed the full permission check. A hit is
+    // compare + add + copy. The entries depend on the translation context (priv, MPRV/MPP, SUM, MXR,
+    // satp), so they are flushed when it changes. Loads/stores are aligned, so an access never
+    // crosses a page
+    static constexpr u32 FAST_TLB_BITS = 8;
+    static constexpr u32 FAST_TLB_MASK = (1u << FAST_TLB_BITS) - 1;
+    static constexpr u32 FAST_TLB_INVALID = ~0u; // never equal to a 20 bit vpn
+
+    struct fast_i_entry { u32 tag_x; uintptr_t addend; };          // host address = addend + va
+    struct fast_d_entry { u32 tag_r; u32 tag_w; uintptr_t addend; };
+
+    fast_i_entry fast_i[1u << FAST_TLB_BITS];
+    fast_d_entry fast_d[1u << FAST_TLB_BITS];
+    u32 fast_key = FAST_TLB_INVALID;
+    fast_tlb_stats_t fast_stats;
+
+    void fast_flush();
+    void fast_check_context(); // flush if priv, data priv (MPRV/MPP), SUM or MXR changed
+    void fast_fill(access_type_t access_type, u32 va, u32 pa);
+
+    void load_slow(u32 addr, u32 len, u8* data, access_type_t access_type);
+    void store_slow(u32 addr, u32 len, const u8* data, access_type_t access_type);
+
+    void load(u32 addr, u32 len, u8* data, access_type_t access_type = access_type_t::r)
+    {
+        u32 vpn = addr >> 12;
+        u32 i = vpn & FAST_TLB_MASK;
+        if (access_type == access_type_t::x) {
+            if (fast_i[i].tag_x == vpn) [[likely]] {
+                copy_small(data, (const u8*)(fast_i[i].addend + addr), len);
+                return;
+            }
+        } else {
+            u32 tag = access_type == access_type_t::r ? fast_d[i].tag_r : fast_d[i].tag_w;
+            if (tag == vpn) [[likely]] {
+                copy_small(data, (const u8*)(fast_d[i].addend + addr), len);
+                return;
+            }
+        }
+        load_slow(addr, len, data, access_type);
+    }
+
+    void store(u32 addr, u32 len, const u8* data, access_type_t access_type = access_type_t::w)
+    {
+        u32 vpn = addr >> 12;
+        u32 i = vpn & FAST_TLB_MASK;
+        if (fast_d[i].tag_w == vpn) [[likely]] {
+            copy_small((u8*)(fast_d[i].addend + addr), data, len);
+            return;
+        }
+        store_slow(addr, len, data, access_type);
+    }
 
     bool seip = false;
 

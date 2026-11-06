@@ -10,6 +10,9 @@ hart::hart(::mmio* mmio, u32 mhartid, u32 pc)
     mstatus.MPP() = 0b11;
 
     misa = 0x40141101; // MXL = 32, extensions: A, I, M, S, U
+
+    fast_flush();
+    fast_stats = {};
 }
 
 void hart::step()
@@ -146,6 +149,8 @@ void hart::step()
                 pc = mtvec.BASE() * 4;
             }
         }
+
+        fast_check_context();
 
     }
 
@@ -376,7 +381,7 @@ u32 hart::resolve_addr(u32 addr, access_type_t access_type) {
     return sv32_ptw(addr, access_type, _priv);
 }
 
-void hart::load(u32 addr, u32 len, u8* data, access_type_t access_type) {
+void hart::load_slow(u32 addr, u32 len, u8* data, access_type_t access_type) {
     trap_cause_t access_fault_exception = access_type_to_access_fault_exception(access_type);
 
     u32 pa = resolve_addr(addr, access_type);
@@ -384,14 +389,74 @@ void hart::load(u32 addr, u32 len, u8* data, access_type_t access_type) {
     if (!bus_load(pa, len, data)) {
         throw trap{access_fault_exception, addr};
     }
+
+    fast_fill(access_type, addr, pa);
 }
 
-void hart::store(u32 addr, u32 len, const u8* data, access_type_t access_type) {
+void hart::store_slow(u32 addr, u32 len, const u8* data, access_type_t access_type) {
     trap_cause_t access_fault_exception = access_type_to_access_fault_exception(access_type);
 
     u32 pa = resolve_addr(addr, access_type);
 
     if (!bus_store(pa, len, data)) {
         throw trap{access_fault_exception, addr};
+    }
+
+    fast_fill(access_type, addr, pa);
+}
+
+void hart::fast_flush()
+{
+    for (auto& e : fast_i) {
+        e.tag_x = FAST_TLB_INVALID;
+    }
+    for (auto& e : fast_d) {
+        e.tag_r = FAST_TLB_INVALID;
+        e.tag_w = FAST_TLB_INVALID;
+    }
+    fast_stats.flushes++;
+}
+
+void hart::fast_check_context()
+{
+    u32 dpriv = mstatus.MPRV() ? (u32)mstatus.MPP() : priv;
+    u32 key = priv | dpriv << 2 | (u32)mstatus.SUM() << 4 | (u32)mstatus.MXR() << 5;
+    if (key != fast_key) {
+        fast_key = key;
+        fast_flush();
+    }
+}
+
+// called after an access passed resolve_addr (all permission checks, A/D bits set) and the bus.
+// Only pages that lie completely in RAM are cached, everything else keeps going through mmio
+void hart::fast_fill(access_type_t access_type, u32 va, u32 pa)
+{
+    u32 off = (pa & ~0xfffu) - ram_base;
+    if (!(off < ram_size && ram_size - off >= 4096)) {
+        return;
+    }
+
+    u32 vpn = va >> 12;
+    u32 i = vpn & FAST_TLB_MASK;
+    uintptr_t addend = (uintptr_t)(ram_host + off) - (uintptr_t)(va & ~0xfffu);
+
+    switch (access_type) {
+        case access_type_t::x:
+            fast_i[i] = {vpn, addend};
+            fast_stats.ifills++;
+            break;
+        case access_type_t::r:
+            if (fast_d[i].tag_w != vpn) {
+                fast_d[i].tag_w = FAST_TLB_INVALID;
+            }
+            fast_d[i].tag_r = vpn;
+            fast_d[i].addend = addend;
+            fast_stats.dfills++;
+            break;
+        case access_type_t::w:
+            // W without R is a reserved PTE encoding, so a page that passed the write check is also readable
+            fast_d[i] = {vpn, vpn, addend};
+            fast_stats.dfills++;
+            break;
     }
 }

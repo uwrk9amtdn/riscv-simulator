@@ -97,6 +97,8 @@ void hart::inst_mret() {
     priv = mstatus.MPP();
     mstatus.MPP() = 0b00;
 
+    fast_check_context();
+
     pc = mepc;
 }
 
@@ -112,6 +114,8 @@ void hart::inst_sret() {
 
     priv = mstatus.SPP();
     mstatus.SPP() = 0b0;
+
+    fast_check_context();
 
     pc = sepc;
 }
@@ -132,6 +136,8 @@ void hart::inst_sfence_vma() {
     if (rs2 != 0) {
         asid = get_part(regs[rs2], 8, 0); // satp.ASID is 9 bits
     }
+
+    fast_flush(); // the fast TLB has no ASID/global info, always drop everything
 
     for (hart_tlb_t* tlb : {itlb.get(), dtlb.get()}) {
         if (!tlb) {

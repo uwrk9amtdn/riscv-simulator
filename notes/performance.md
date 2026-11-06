@@ -42,6 +42,34 @@ a direct-mapped TLB indexes by virtual address, so random stack and mmap placeme
 many entries collide. MIPS doesn't follow the miss count (the run with the most misses was the
 fastest), so the MIPS spread here is host noise.
 
+## Host-pointer fast TLB (2026-11-06)
+
+A second, tiny TLB sits in front of `resolve_addr` + the bus in `hart::load`/`store`
+([hart.h](../src/hart/hart.h)): `fast_i` (fetch) and `fast_d` (load/store), direct-mapped by VPN.
+Each entry holds a tag per access type (`tag_x`, or `tag_r`/`tag_w`) and an `addend`, so that
+`host address = addend + va`. A tag is only set after that access passed the full path (old TLB or
+walker, permission check, A/D update, bus), and only for pages that lie entirely in RAM. A hit is
+compare + add + copy: no permission check, no `ppn` arithmetic, no RAM range check. A successful
+write also sets `tag_r` (W without R is reserved in Sv32). LR/SC and AMO keep the old path.
+
+Invalidation: the entries are valid only for the context they were filled in. `fast_check_context()`
+runs after trap entry, `mret`, `sret` and `mstatus`/`sstatus` writes, and flushes if
+(priv, MPRV ? MPP : priv, SUM, MXR) changed. A `satp` change and every `sfence.vma` flush too.
+The old I/D TLBs stay as the second level, so their hit-rate counters now count only fast-TLB misses.
+
+| config (default build: static dm64 + RAM fast path) | MIPS (median, 3 runs) | runs | vs off |
+|---|---|---|---|
+| without fast TLB | 73.30 | 75.85 73.30 71.05 | 2.53x |
+| fast TLB, 64 entries | 127.42 | 127.42 126.07 128.45 | 4.41x |
+| **fast TLB, 256 entries (default)** | **135.38** | 136.69 135.38 126.79 | **4.68x** |
+| fast TLB, 1024 entries | 122.93 | 122.95 126.19 122.93 | 4.25x |
+
+That's +85% over the previous default. Per run: about 674M fetches with 2.09M fetch fills (99.7% fast
+hits), and about 311K flushes (mostly U↔S traps and the kernel's SUM toggles). 1024 entries
+are slower because each flush clears 32 KiB. 64 entries refill more often. Flushing per context
+instead (for example one table per (priv, SUM) key, or a generation counter instead of clearing)
+is the next thing to try if flushes show up in a profile.
+
 ## How to run
 
 The default build is devirtualized (`RVSIM_TLB_STATIC=DirectMappedTLB`, so only `--tlb=dm` is

@@ -35,6 +35,8 @@ void hart::csr_rw_mstatus (u32 rm, u32 wm, u32& rd, u32 wd) {
     if (mstatus.MPP() == 0b10) { // 10 is not supported, force 11
         mstatus.MPP() = 0b11;
     }
+
+    fast_check_context();
 }
 
 void hart::csr_rw_mstatush (u32 rm, u32 wm, u32& rd, u32 wd) {
@@ -106,6 +108,7 @@ void hart::csr_rw_sstatus (u32 rm, u32 wm, u32& rd, u32 wd) {
     u32 mask = 0x0c0122;
     rd = (mstatus & rm & mask);
     mstatus = set_with_mask(mstatus, wd, wm & mask);
+    fast_check_context(); // SUM, MXR
 }
 
 void hart::csr_rw_sip (u32 rm, u32 wm, u32& rd, u32 wd) {
@@ -151,8 +154,12 @@ void hart::csr_rw_stval (u32 rm, u32 wm, u32& rd, u32 wd) {
 void hart::csr_rw_satp (u32 rm, u32 wm, u32& rd, u32 wd) {
     // TODO: mstatus.TVM
     rd = satp & rm;
+    u32 old = satp;
     satp = set_with_mask(satp, wd, wm);
     satp.field<21,20>() = 0b00;
+    if (satp != old) {
+        fast_flush();
+    }
 }
 
 void hart::csr_rw_scounteren (u32 rm, u32 wm, u32& rd, u32 wd) {

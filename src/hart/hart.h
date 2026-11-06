@@ -5,6 +5,7 @@
 #include "constants.h"
 #include "tlb.h"
 
+#include <cstring>
 #include <memory>
 #include <string>
 
@@ -35,6 +36,10 @@ public:
     void set_tlb(const std::string& kind, u32 entries, u32 ways);
     const hart_tlb_t* get_itlb() const { return itlb.get(); }
     const hart_tlb_t* get_dtlb() const { return dtlb.get(); }
+
+    // RAM fast path: physical accesses inside [base, base + size) go straight to host memory instead of
+    // through the mmio tree. The region must not be shared with any other device
+    void set_ram(u32 base, u32 size, u8* host) { ram_base = base; ram_size = size; ram_host = host; }
 
     bool waiting = false;
 
@@ -198,6 +203,41 @@ private:
     void store(u32 addr, u32 len, const u8* data, access_type_t access_type = access_type_t::w);
 
     bool seip = false;
+
+    u32 ram_base = 0;
+    u32 ram_size = 0;
+    u8* ram_host = nullptr;
+
+    // physical bus access: RAM fast path, otherwise the mmio tree. len is 1, 2 or 4
+    static inline void copy_small(u8* dst, const u8* src, u32 len)
+    {
+        switch (len) {
+            case 4: memcpy(dst, src, 4); break;
+            case 2: memcpy(dst, src, 2); break;
+            case 1: *dst = *src; break;
+            default: memcpy(dst, src, len); break;
+        }
+    }
+
+    bool bus_load(u32 pa, u32 len, u8* data)
+    {
+        u32 off = pa - ram_base; // wraps for pa < ram_base, so one compare covers both bounds
+        if (off < ram_size && len <= ram_size - off) [[likely]] {
+            copy_small(data, ram_host + off, len);
+            return true;
+        }
+        return mmio_->load(pa, len, data);
+    }
+
+    bool bus_store(u32 pa, u32 len, const u8* data)
+    {
+        u32 off = pa - ram_base;
+        if (off < ram_size && len <= ram_size - off) [[likely]] {
+            copy_small(ram_host + off, data, len);
+            return true;
+        }
+        return mmio_->store(pa, len, data);
+    }
 
     ////
 

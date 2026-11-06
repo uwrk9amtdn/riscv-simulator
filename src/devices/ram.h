@@ -9,6 +9,8 @@ class ram : public mmio_device {
         bool load(u32 addr, u32 len, u8* data) override;
         bool store(u32 addr, u32 len, const u8* data) override;
         u64 size() const override;
+        // backing buffer, so a hart can access RAM directly without the virtual bus call
+        u8* host_ptr() { return data.get(); }
         void tick() override;
         ~ram() override;
     private:

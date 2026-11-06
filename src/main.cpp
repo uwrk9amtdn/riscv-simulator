@@ -196,6 +196,7 @@ int main(int argc, char** argv)
     // TODO: generate dtb automatically from mmio
 
     mmap.add_device(&ram0, 8);  // 0x8000_0000
+    hart_0.set_ram(0x80000000, ram0.size(), ram0.host_ptr());
     mmap.add_device(&prpl, 0);
 
     prpl.add_device(&uart0, 1);  // 0x0100_0000

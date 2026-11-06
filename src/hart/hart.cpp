@@ -267,7 +267,7 @@ u32 hart::sv32_ptw(u32 va, access_type_t access_type, u32 priv) {
 
     for (int i = 1; i >= 0; i--) {
         u32 a = ppa + vpn[i] * 4;
-        if (!mmio_->load(a, 4, (u8*)&pte)) {
+        if (!bus_load(a, 4, (u8*)&pte)) {
             throw trap{access_fault_exception, va};
         }
 
@@ -309,7 +309,7 @@ u32 hart::sv32_ptw(u32 va, access_type_t access_type, u32 priv) {
 
         // TODO: PTE update must be atomic. Will not be issue in a single core simulator. Will be implemented later
         if (store) {
-            if (!mmio_->store(a, 4, (u8*)&pte)) {
+            if (!bus_store(a, 4, (u8*)&pte)) {
                 throw trap{access_fault_exception, va};
             }
         }
@@ -378,7 +378,7 @@ void hart::load(u32 addr, u32 len, u8* data, access_type_t access_type) {
 
     u32 pa = resolve_addr(addr, access_type);
 
-    if (!mmio_->load(pa, len, data)) {
+    if (!bus_load(pa, len, data)) {
         throw trap{access_fault_exception, addr};
     }
 }
@@ -388,7 +388,7 @@ void hart::store(u32 addr, u32 len, const u8* data, access_type_t access_type) {
 
     u32 pa = resolve_addr(addr, access_type);
 
-    if (!mmio_->store(pa, len, data)) {
+    if (!bus_store(pa, len, data)) {
         throw trap{access_fault_exception, addr};
     }
 }

@@ -46,7 +46,7 @@ void hart::inst_lr_w() {
 
     pa = resolve_addr(addr, access_type_t::r);
 
-    if (!mmio_->load(pa, 4, (u8*)&ldata)) {
+    if (!bus_load(pa, 4, (u8*)&ldata)) {
         throw trap{trap_cause_t::load_access_fault_exception, addr};
     }
 
@@ -73,7 +73,7 @@ void hart::inst_sc_w() {
     pa = resolve_addr(addr, access_type_t::w);
 
     if (reservation_set && reserved_addr == pa) {
-        if (!mmio_->store(pa, 4, (u8*)&sdata)) {
+        if (!bus_store(pa, 4, (u8*)&sdata)) {
             throw trap{trap_cause_t::store_amo_access_fault_exception, addr};
         }
         regs[rd] = 0;

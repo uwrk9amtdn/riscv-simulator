@@ -17,6 +17,28 @@ Plan, review findings and recommendations: [tlb-plan.md](tlb-plan.md).
 - Done: the full matrix (3 runs each), the devirtualized variants and the M-mode reference (2026-11-06).
   The default is now `dm`, 64 entries (it was `sa` 64x4).
 
+## RAM fast path (2026-11-06)
+
+All hart bus accesses (fetch, load/store, AMO, PTE reads and A/D writes) now go through
+`hart::bus_load`/`bus_store` ([hart.h](../src/hart/hart.h)). A physical address inside RAM
+(`set_ram(base, size, host)`, set in `main.cpp`) is a fixed-size `memcpy` from the host buffer.
+Everything else still goes through the `mmio` tree. That removes two virtual calls (`mmio` → `ram`),
+the slot decode and the size checks from every RAM access.
+
+| config | MIPS (median, 3 runs) | runs | vs off |
+|---|---|---|---|
+| dm 64, before | 48.52 | 48.32 48.52 48.97 | 1.68x |
+| **dm 64 + RAM fast path** | **63.64** | 68.32 63.64 61.67 | **2.20x** |
+
+That's +31%, more than devirtualizing the TLB gave (+17%). The two gains are independent, so a
+static dm64 build with the fast path should do better still (not measured yet). The M-mode
+reference (67.8) was measured without the fast path, so it is no longer an upper bound.
+
+The D-TLB miss count of dm64 varies up to 10x between runs (0.54M–5.5M). The guess is guest ASLR:
+a direct-mapped TLB indexes by virtual address, so random stack and mmap placement changes how
+many entries collide. MIPS doesn't follow the miss count (the run with the most misses was the
+fastest), so the MIPS spread here is host noise.
+
 ## How to run
 
 ```

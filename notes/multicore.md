@@ -23,7 +23,7 @@ A prototype of the same design (2026-10-09) brought idle host CPU from 100% down
 
 ### Design
 
-The design is single-threaded. WFI never blocks inside `hart::step()`. It only sets a flag. The main loop sees the flag and puts the host to sleep in `ppoll()`, with a timeout set to the earliest moment a device will change state by itself. Input on the UART fd ends the sleep early.
+The design is single-threaded. WFI never blocks inside `hart::step()`. It only sets a flag. The main loop sees the flag and puts the host to sleep in `ppoll()`, with a timeout set to the earliest moment a device will change state by itself. Input on any device's host fd (`mmio_device::host_fds()`, collected from the whole device tree by `host_io`) ends the sleep early; today that is the UART's input fd.
 
 ### Changes by file
 
@@ -65,7 +65,7 @@ The design is single-threaded. WFI never blocks inside `hart::step()`. It only s
 
 ### Limitations and things to keep in mind when redoing it
 
-- The main loop only knows about one hart and one UART fd. A device that gets input from elsewhere, such as a future virtio or network fd, would need its own way to wake the loop. A list of fds collected from the devices is the general form, like `rx_fd()` made generic.
+- The main loop only knows about one hart. ~~And one UART fd~~: done (2026-11-06). Devices report their fds through `mmio_device::host_fds()`, and `host_io` collects them from the whole device tree, so a future virtio or network device only has to implement `host_fds()`/`poll_input()`.
 - The PLIC has no deadline and the loop does not tick it separately. That is fine for now, because it changes only when a device signals it, and every device signal goes through `tick()` or `poll_input()` before the wake check.
 - `tick()` now calls `clock_gettime` once per 1000 instructions (CLINT and UART each make one call). That is a vDSO call of about 20 ns, so it costs very little. Keep the tick interval coarse anyway.
 - MTIP and the UART interrupt are still sampled only every 1000 instructions while the hart runs. That is about 20 µs at current speed, which is good enough.

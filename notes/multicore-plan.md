@@ -61,31 +61,37 @@ Check: the M-mode and S-mode images boot as before, and idle host CPU stays low.
 
 ---
 
-## Phase 2: `host_io` (single hart, no behavior change)
+## Phase 2: `host_io` (single hart, no behavior change) — done 2026-11-06
 
-Goal: move the `ppoll` branch out of `main()` into an object that both schedulers can use.
+Goal: move the `ppoll` branch out of `main()` into an object that both schedulers can use, and stop
+hardcoding the UART's fd.
 
-1. Add `src/host_io.{h,cpp}`:
-   ```cpp
-   class host_io {
-   public:
-       host_io(mmio* root, std::vector<mmio_device*> fd_devices);
-       void wait_until_event(); // ppoll until input, a deadline or a kick; then poll_input() + root->tick()
-       void kick();             // write to an eventfd; a no-op unless threaded
-       void set_threaded(bool);
-   private:
-       int kick_fd;             // eventfd(0, EFD_NONBLOCK)
-   };
-   ```
-2. Make the device fd interface generic. Move `rx_fd()` and `poll_input()` from `uart` to `mmio_device` as virtual functions with defaults (`-1` and no-op). Rename `rx_fd()` to `host_fd()`. The same rule still applies: return `-1` while the device can't accept input.
-3. `wait_until_event()` builds the pollfd array from every device's `host_fd()` plus `kick_fd`. It takes its timeout from `root->next_deadline_ns()`, calls `poll_input()` on readable devices, drains `kick_fd`, then calls `root->tick()`.
-4. Add `virtual void deadline_changed()` to `mmio_device`. It forwards to `host_io::kick()` through a pointer that is set when the device is registered. Call it wherever a deadline can move *earlier*:
-   - a CLINT `mtimecmp` write (either half);
-   - a guest read of UART RBR (this re-arms `rx_deadline_ns`);
-   - a guest `mtime` write.
-5. The `main()` loop's waiting branch becomes `io.wait_until_event()`.
+What was built:
 
-Check: same behavior as after phase 1.
+1. `mmio_device` has two more virtual functions with empty defaults:
+   - `host_fds(std::vector<host_fd>& out)` appends `{fd, device}` for every host fd the device
+     currently waits on. The rule from the UART stays: leave an fd out while the device can't take
+     input, because it would stay readable and turn the WFI sleep into a busy loop.
+   - `poll_input()` is called when one of the device's fds is readable. It must not block.
+2. `mmio` forwards `host_fds()` to its children, the same way it already forwards `tick()` and
+   `next_deadline_ns()`. Any device anywhere in the tree is found automatically, with no
+   registration list. A device can have several fds.
+3. `src/host_io.{h,cpp}`: `host_io(mmio_device* root)` and `wait_until_event()`. That collects the
+   fds and the earliest deadline from the root, sleeps in `ppoll`, then calls `poll_input()` on the
+   devices with readable fds (any `revents`, so a hang-up reaches the device as end of input).
+4. The UART's `rx_fd()` became the `host_fds()` override. `poll_input()` is now an override.
+5. `main()`'s waiting branch is `io.wait_until_event()`. `mmap.tick()` and the wake check stay after
+   it, as before, so the order of events didn't change.
+
+Not done yet, because single-threaded mode doesn't need it: `kick()` (an eventfd in the poll set)
+and `deadline_changed()`. With one thread the host only sleeps while every hart is parked, so
+nothing can move a deadline during the sleep, and the deadline computed just before it is always
+current. Phase 4 adds both: the I/O thread sleeps while harts run, so a `mtimecmp` write, a UART RBR
+read (re-arms the character timeout) or an `mtime` write must kick it.
+
+Check (done): `--check` passes. Idle CPU over 5 s at the shell prompt is 0.12-0.14 s, the same as
+before (0.12-0.17 s). Wake latency is 3-7 ms in both. A 3000-byte paste into `wc -c` (fills the
+16-byte RX FIFO ~190 times) arrives complete with 0.02 s of host CPU in both.
 
 ---
 
@@ -203,6 +209,7 @@ void io_thread(host_io& io, std::atomic<bool>& stop) {
 - A running hart sees new lines on the next `step()`, through `effective_mip()`.
 - Hart threads don't call `mmap.tick()`. Only the I/O thread drives device time, and it sleeps in `ppoll` instead of polling every 1000 instructions. The `POLL_PERIOD_NS` throttle in `uart::tick()` isn't needed in this mode.
 - A hart that writes `mtimecmp` or reads RBR calls `deadline_changed()`, which kicks the I/O thread so it recomputes its timeout. Without this, timer interrupts get lost (`multicore.md` 3.4).
+- `kick()`, `set_threaded()` and `deadline_changed()` don't exist yet (phase 2 left them out, see there). Add them here: `host_io` gets an eventfd and adds it to the poll set built from `host_fds()`, and `mmio_device` gets `deadline_changed()`, which forwards to `host_io::kick()` through a pointer set when the device is added to the bus.
 - To shut down: set `stop`, kick the I/O thread, call `set_line(LINE_KICK, 1)` on every hart, then join all threads.
 
 Check:

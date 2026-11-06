@@ -65,6 +65,15 @@ u64 mmio::next_deadline_ns()
     return deadline;
 }
 
+void mmio::host_fds(std::vector<host_fd>& out)
+{
+    for (auto& device : devices) {
+        if (device) {
+            device->host_fds(out);
+        }
+    }
+}
+
 void mmio::tick()
 {
     for (auto& device : devices) {

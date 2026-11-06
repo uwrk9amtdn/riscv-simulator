@@ -17,8 +17,8 @@ public:
     void tick() override;
     u64 next_deadline_ns() override;
 
-    int rx_fd() const;  // fd to wait on for input, -1 while the receiver can not take a byte
-    void poll_input();  // move pending input into the receiver, never blocks
+    void host_fds(std::vector<host_fd>& out) override; // the input fd while the receiver can take a byte
+    void poll_input() override;                        // move pending input into the receiver, never blocks
     ~uart() override;
 
 private:

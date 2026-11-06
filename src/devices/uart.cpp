@@ -314,11 +314,13 @@ bool uart::can_rx() const
     return !(lsr & UART_LSR_DR);
 }
 
-int uart::rx_fd() const
+void uart::host_fds(std::vector<host_fd>& out)
 {
     // while the receiver is full the fd must not be waited on: it stays readable, so poll() would return
     // immediately and the WFI sleep would turn back into a busy loop
-    return can_rx() ? fd : -1;
+    if (fd >= 0 && can_rx()) {
+        out.push_back({fd, this});
+    }
 }
 
 u64 uart::next_deadline_ns()

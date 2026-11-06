@@ -9,6 +9,7 @@ endif()
 add_executable(rvsim
     src/main.cpp
     src/mmio.cpp
+    src/host_io.cpp
     src/hart/hart.cpp
     src/hart/csr.cpp
     src/hart/op_amo.cpp

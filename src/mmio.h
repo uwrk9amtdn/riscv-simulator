@@ -16,6 +16,7 @@ public:
     u64 size() const override;
     void tick() override;
     u64 next_deadline_ns() override;
+    void host_fds(std::vector<host_fd>& out) override;
 
 private:
     std::vector<mmio_device*> devices;

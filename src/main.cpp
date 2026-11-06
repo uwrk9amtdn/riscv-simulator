@@ -5,6 +5,7 @@
 #include "clint.h"
 #include "ram.h"
 #include "uart.h"
+#include "host_io.h"
 
 #include <stdio.h>
 #include <stdlib.h>
@@ -15,7 +16,6 @@
 #include <csignal>
 
 #include <getopt.h>
-#include <poll.h>
 #include <libfdt.h>
 
 // TODO: disable ctrl+c
@@ -268,34 +268,15 @@ int main(int argc, char** argv)
 
     signal(SIGUSR1, on_sigusr1);
 
+    host_io io(&mmap);
+
     u64 instret = 0; // steps, including the ones that trapped
     auto t0 = std::chrono::steady_clock::now();
     std::clock_t c0 = std::clock();
 
     while ((sim.max_instr == 0 || instret < sim.max_instr) && !stop_requested) {
         if (hart_0.waiting) {
-            // the hart is parked in WFI. Sleep in the kernel until input arrives or a device deadline passes
-            u64 now = host_now_ns();
-            u64 deadline = mmap.next_deadline_ns();
-
-            struct pollfd pfd;
-            pfd.fd = uart0.rx_fd(); // poll ignores a negative fd
-            pfd.events = POLLIN;
-            pfd.revents = 0;
-
-            timespec ts;
-            timespec* timeout = nullptr; // no deadline: only input can wake the machine
-
-            if (deadline != NO_DEADLINE) {
-                u64 d = deadline > now ? deadline - now : 0;
-                ts.tv_sec = d / 1000000000ull;
-                ts.tv_nsec = d % 1000000000ull;
-                timeout = &ts;
-            }
-
-            if (ppoll(&pfd, 1, timeout, nullptr) > 0) {
-                uart0.poll_input();
-            }
+            io.wait_until_event(); // the hart is parked in WFI: sleep until host input or a device deadline
         } else {
             u64 n = instr_per_tick;
             if (sim.max_instr != 0 && sim.max_instr - instret < n) {

@@ -2,3 +2,4 @@ build/
 compile_commands.json
 build_static*/
 build_dynamic/
+__pycache__/

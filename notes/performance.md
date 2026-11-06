@@ -87,6 +87,51 @@ About +6.5%. The new build won all three pairs. A separate 3-run measurement of 
 gave 141.68 (141.68 141.54 141.94). The old build measured 135.38 above but 129.95 here, because
 the host speed varies between sessions. The A/B numbers are the ones to compare.
 
+## Profile after the fetch-page cache (2026-11-06)
+
+`perf record` (software task-clock, because WSL2 has no hardware counters) on one boot + workload
+run of the default build with `-g` added. That run got 133 MIPS under perf. Reproduce with
+[prof_bench.py](prof_bench.py). With LTO almost everything is inlined into `hart::step()` (88%),
+so the breakdown is by source line:
+
+| share | what | where |
+|---|---|---|
+| ~13% | interrupt check on every instruction (the block plus the `mstatus` field reads) | `hart.cpp:19-58`, `hart.h:51` |
+| ~14% | `get_part` bit extraction: decoding fields into members, immediates | `common.h:16`, `common.h:26` |
+| ~16% | dispatch: opcode `switch` plus the second-level `funct3` switches | `hart.cpp:74`, `op_imm.cpp:6`, `op_load.cpp:5`, `op_op.cpp:5`, ... |
+| ~10% | one `step()` call per instruction: main loop, `waiting` test, `try` setup, epilogue, `regs[0] = 0` | `main.cpp:301-302`, `hart.cpp:158` |
+| ~6% | `copy_small`'s `switch (len)`: `len` isn't a compile-time constant on the fast path | `hart.h:287-291` |
+| ~4% | slow path: `load_slow`, page-table walk, permission check | |
+| <0.5% | context flushes (`fast_check_context`), exception unwinding, device ticks | |
+
+Exceptions, flushes and device ticks don't matter. The interpreter loop itself is the cost.
+
+This run also showed the bad data-table case: 12M fast-D fills, against about 2.4M in good runs
+(presumably guest ASLR making pages collide in the direct-mapped `fast_d`). The bad runs are about
+7–10% slower.
+
+### Next optimizations, cheapest first
+
+1. **Access size as a template parameter** (`load<4>(addr, ...)`). `copy_small`'s switch goes away,
+   and each call site becomes one move. Up to ~5%.
+2. **Run instructions in batches inside the hart**: `hart::run(n)` loops internally, with the
+   `try`/`catch` outside the inner loop (catch, take the trap, keep looping). The main loop calls
+   `run(1000)`. Removes most of the ~10% call/loop overhead.
+3. **Check interrupts only when something changes**: an `irq_dirty` flag set by `set_*ip`, writes
+   to `mie`/`mip`/`mstatus`/`mideleg`, and `mret`/`sret`/trap entry. `step()` tests one bool.
+   Wins back most of the ~13%. For multicore it becomes the atomic flag from
+   [multicore.md](multicore.md).
+4. **Fix the fast-D conflict case**: a hashed index (`(vpn ^ vpn >> 8) & mask`) or 2 ways, so runs
+   are consistent.
+5. **Decoded-instruction cache**, the largest change and the largest gain (targets the ~30% in
+   decode and dispatch). Per RAM code page, cache a decoded entry per instruction (handler, `rd`,
+   `rs1`, `rs2`, sign-extended `imm`). Builds on the fetch-page cache. Stores to a page with
+   decoded code must invalidate it: leave the fast-TLB write tag unset for those pages, so stores
+   take the slow path and drop the page. `fence.i` flushes all. Linux does patch its own code
+   (boot-time alternatives, module loading), so this needs care.
+
+Suggested order: 1 → 2 → 3, measuring after each, then 4, then 5 as its own task.
+
 ## How to run
 
 The default build is devirtualized (`RVSIM_TLB_STATIC=DirectMappedTLB`, so only `--tlb=dm` is

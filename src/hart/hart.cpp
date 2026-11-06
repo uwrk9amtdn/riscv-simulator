@@ -61,7 +61,7 @@ void hart::step()
             }
         }
 
-        load(pc, 4, (u8*)&inst, access_type_t::x);
+        fetch();
 
         opcode = get_part(inst,  6,  0);
         rs1    = get_part(inst, 19, 15);
@@ -414,6 +414,7 @@ void hart::fast_flush()
         e.tag_r = FAST_TLB_INVALID;
         e.tag_w = FAST_TLB_INVALID;
     }
+    fetch_vpn = FAST_TLB_INVALID;
     fast_stats.flushes++;
 }
 

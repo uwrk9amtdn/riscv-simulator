@@ -217,6 +217,26 @@ private:
     fast_i_entry fast_i[1u << FAST_TLB_BITS];
     fast_d_entry fast_d[1u << FAST_TLB_BITS];
     u32 fast_key = FAST_TLB_INVALID;
+
+    // fetch-page cache: the fast_i entry of the page pc is on, so a fetch on the same page is one compare.
+    // Cleared by fast_flush, so it is invalidated by every context change, satp change and sfence.vma
+    u32 fetch_vpn = FAST_TLB_INVALID;
+    uintptr_t fetch_addend = 0;
+
+    void fetch()
+    {
+        u32 vpn = pc >> 12;
+        if (vpn == fetch_vpn) [[likely]] {
+            memcpy(&inst, (const u8*)(fetch_addend + pc), 4);
+            return;
+        }
+        load(pc, 4, (u8*)&inst, access_type_t::x);
+        const fast_i_entry& e = fast_i[vpn & FAST_TLB_MASK];
+        if (e.tag_x == vpn) { // the page is RAM and passed the execute check
+            fetch_vpn = vpn;
+            fetch_addend = e.addend;
+        }
+    }
     fast_tlb_stats_t fast_stats;
 
     void fast_flush();

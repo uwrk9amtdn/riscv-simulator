@@ -70,6 +70,23 @@ are slower because each flush clears 32 KiB. 64 entries refill more often. Flush
 instead (for example one table per (priv, SUM) key, or a generation counter instead of clearing)
 is the next thing to try if flushes show up in a profile.
 
+## Fetch-page cache (2026-11-06)
+
+`hart::fetch()` ([hart.h](../src/hart/hart.h)) keeps the `fast_i` entry of the page the PC is on
+(`fetch_vpn`, `fetch_addend`). A fetch on the same page is one compare + copy, with no fast-TLB
+index or table load. On another page it fetches through `load(..., x)` and takes the `fast_i`
+entry if one was filled. `fast_flush()` clears it, so it is invalidated by every context change,
+`satp` change and `sfence.vma`.
+
+| default build | MIPS (3 runs, alternated A/B in one session) | median |
+|---|---|---|
+| fast TLB only (previous commit) | 131.26 126.09 129.95 | 129.95 |
+| **+ fetch-page cache** | 139.32 136.66 138.34 | **138.34** |
+
+About +6.5%. The new build won all three pairs. A separate 3-run measurement of the new build
+gave 141.68 (141.68 141.54 141.94). The old build measured 135.38 above but 129.95 here, because
+the host speed varies between sessions. The A/B numbers are the ones to compare.
+
 ## How to run
 
 The default build is devirtualized (`RVSIM_TLB_STATIC=DirectMappedTLB`, so only `--tlb=dm` is

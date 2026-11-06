@@ -223,7 +223,89 @@ Check:
 
 ---
 
-## Phase 4: one host thread per hart
+## Phase 4: one host thread per hart — IN PROGRESS (stopped 2026-11-06)
+
+**Where it stands.** `--threads` works: SMP Linux boots on 1, 2, 4 and 8 threaded harts and gives
+correct results under parallel load. ThreadSanitizer reports no races. Two checks from the list below
+are still open (see "Next steps").
+
+**Done (commit 6b131d6, thread-safety, still round-robin):**
+
+- Guest RAM accesses (fast-TLB hits, fetch, `bus_load`/`bus_store`) are relaxed `std::atomic_ref`
+  accesses (plain moves on x86). All accesses are aligned: misaligned ones trap, and `mepc`/`sepc`
+  and the trap vectors keep `pc` 4-aligned.
+- AMOs: `hart::amo()` is one seq_cst compare-exchange loop on the host word (MMIO: load + store
+  under the device lock). LR records the physical address and the value, SC compare-exchanges from that
+  value. `fence` is `atomic_thread_fence(seq_cst)`. The walker's A/D update is a compare-exchange,
+  walking again if it loses.
+- `irq_dirty` is atomic. `set_line()` publishes the line, then sets the flag (release). `run()` claims
+  it with an `exchange(false, acq_rel)` before the check, so a line raised during the check is never lost.
+- **One device lock** (`mmio::lock` on the root bus) instead of one mutex per device: devices call each
+  other (UART -> PLIC -> hart lines), so a single lock avoids lock-order problems. It's taken for MMIO in
+  `bus_load`/`bus_store` and `amo()`, in `host_io`, and around `tick()`. Not inside `mmio` itself (the root
+  bus calls the nested ones).
+- `host_io`: an eventfd `kick()` in the poll set, the `mmio_device::notify_host_changed()` hook (the CLINT
+  on `mtimecmp`/`mtime` writes, the UART on RBR reads and IER/FCR/MCR writes), and a `ppoll` signal mask.
+- Checked in round-robin mode: `--check`, the idle/paste test, the 4-hart SMP stress, and speed (185.64 vs
+  184.61 MIPS).
+
+**Done (uncommitted at the time of writing, committed as WIP afterwards):**
+
+- `--threads` (main.cpp): one `std::thread` per hart running `run(quantum)`, and
+  `hart::wait_for_interrupt()` (sleeps on `irq_lines.wait()`, returns on a wake condition or `LINE_KICK`)
+  when parked. The main thread is the I/O thread: `io.wait_until_event()`, then `tick()` under the lock.
+  Harts never tick. SIGUSR1 is blocked in every thread and only unblocked inside the I/O thread's `ppoll`
+  (no race between the stop check and the sleep). Shutdown: `stop`, `request_stop()` (sets `LINE_KICK`)
+  on every hart, join. `--max-instr` works through a shared atomic total. CMake links `Threads::Threads`.
+- Note: `mips=` in the SIGUSR1 line divides by the process CPU time, which with threads is the sum over
+  all threads. So it's MIPS per busy core, not throughput. Use wall time for scaling.
+
+**Results so far (`--threads`):**
+
+- Boots: 1 hart (UP kernel), 2 and 4 harts (SMP kernel): all CPUs up, one busy loop per CPU spread
+  evenly over the harts.
+- 4-hart stress workload twice: all correct (loop count, shell arithmetic, 8 x md5 of 4 MiB of zeros,
+  8 x md5 of busybox). No oops, panic, stall or segfault.
+- ThreadSanitizer (`-fsanitize=thread -g -O1`, no LTO): boot of 4 threaded harts plus a smaller stress
+  run (4 pipelines, 4 md5sum) gives no reports. The run is about 100x slower, ~2 MIPS. TSan was checked to
+  work in this environment with a deliberately racy test program.
+- Scaling, one 400000-iteration shell loop per guest CPU (host: i5-1235U, a 15 W hybrid laptop CPU, 2 P-cores
+  with HT + 8 E-cores, 12 MiB L3):
+
+  | harts | round-robin wall | `--threads` wall | host cores used | threads vs RR |
+  |---|---|---|---|---|
+  | 1 | 39.4 s | 39.3 s | 1.01 | 1.0x |
+  | 2 | 86.9 s | 54.1 s | 1.98 | 1.6x |
+  | 4 | 183.5 s | 83.0 s | 3.75 | 2.2x |
+  | 8 | 358.3 s | 124.8 s | 6.72 | 2.9x |
+
+  Each thread is slower than one hart alone (4 threads: 311 s CPU for ~157 s of single-hart work). That is
+  mostly the host: the power-limited clock drops with more busy cores, and threads land on E-cores. A
+  4-thread A/B with a 128K-entry decode cache (2 MiB/hart, fits L3) against 256K (4 MiB/hart) showed no
+  difference (20.98 vs 20.79 s median, spread 15.9-21.8 s from the thermal state). So cache size is not the
+  limit. Round-robin also scales a bit worse than N x (4 harts 183 s, not 157 s): switching between the
+  harts' caches.
+
+**Next steps (where to continue):**
+
+1. **Idle CPU with threads**: `idle_test.py`-style. Boot 4 SMP harts with `--threads` at the shell prompt
+   and measure host CPU over 5 s. It should be close to round-robin's 0.40 s (each guest CPU's 250 Hz tick).
+   This was started when the session stopped; no result yet.
+2. **Timer drift / lost wakeups**: in the guest,
+   `a=$(date +%s); for i in $(seq 60); do sleep 1; done; b=$(date +%s); echo $((b-a))`. Run with `--threads` and
+   round-robin (4 harts); expect ~60 s of host wall time and guest time, and no hang. The plan asks for
+   several minutes; 60 s first.
+3. Re-check 1-hart round-robin speed after the `--threads` restructuring of `main()` (a short A/B against
+   6b131d6). The round-robin loop moved into an `else` branch but is otherwise unchanged.
+4. Repeat the IPI-heavy workloads (fork-heavy scripts, TLB shootdowns via SBI RFENCE) in both modes and
+   compare. The stress workload above covers part of this.
+5. Then: update `multicore.md` 3.5 and the README, and decide whether threads become the default (phase 5).
+
+Test scripts used (scratchpad, not committed): boot-and-run with arbitrary rvsim options and SIGUSR1
+stats (`smp_test.py`), the idle/wake/paste test (`idle_test.py`), scaling (`scale_test.py`). They are
+simple pty drivers along the lines of `notes/bench_tlb.py`. If needed, add a general version to
+`notes/` (e.g. `bench_tlb.py --kernel/--bios/--extra`).
+
 
 Goal: `--threads` runs each hart in its own thread for real parallel speed. Requires items 1 and 2 of `multicore.md` 3.5.
 

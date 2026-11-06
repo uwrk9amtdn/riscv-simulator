@@ -57,4 +57,6 @@ if (NOT FDT_LIB)
     message(FATAL_ERROR "libfdt not found.")
 endif()
 
-target_link_libraries(rvsim ${FDT_LIB})
+find_package(Threads REQUIRED)
+
+target_link_libraries(rvsim ${FDT_LIB} Threads::Threads)

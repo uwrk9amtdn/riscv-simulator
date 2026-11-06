@@ -10,7 +10,9 @@
 #include <stdio.h>
 #include <stdlib.h>
 
+#include <atomic>
 #include <memory>
+#include <thread>
 #include <string>
 #include <vector>
 #include <chrono>
@@ -206,6 +208,7 @@ struct sim_options {
     u64 max_instr = 0; // 0: run forever
     u32 harts = 1;
     u32 quantum = 1000; // instructions a hart runs before the devices tick and the next hart runs
+    bool threads = false; // one host thread per hart plus the I/O thread, instead of round-robin
     const char* dump_dtb = nullptr; // write the final (patched) dtb here
 };
 
@@ -224,6 +227,7 @@ void parse_cmdline(int argc, char* const* argv, const char** bios, const char** 
         {"harts", required_argument, 0, 9},
         {"dump-dtb", required_argument, 0, 10},
         {"quantum", required_argument, 0, 11},
+        {"threads", no_argument, 0, 12},
         {0, 0, 0, 0}
     };
 
@@ -267,6 +271,9 @@ void parse_cmdline(int argc, char* const* argv, const char** bios, const char** 
             break;
         case 11:
             sim->quantum = strtoul(optarg, nullptr, 0);
+            break;
+        case 12:
+            sim->threads = true;
             break;
         case '?':
             printf("unknown option: %s", argv[optind - 1]);
@@ -432,49 +439,102 @@ int main(int argc, char** argv)
         }
     };
 
-    // round-robin: every hart that isn't parked in WFI runs one quantum, then devices tick and parked harts
-    // are woken. Waking after every quantum (not once per round) lets an IPI from one hart start the next
-    // one in the same round. The host sleeps only when every hart is parked
-    while ((sim.max_instr == 0 || instret < sim.max_instr) && !stop_requested) {
-        bool all_waiting = true;
+    if (sim.threads) {
+        // one thread per hart. The main thread is the I/O thread: it sleeps in ppoll until host input, a device
+        // deadline or a kick (a device change from a hart), then lets devices take input and tick. Harts never
+        // tick devices. A parked hart sleeps on its irq_lines word and wakes when a line rises
+        std::atomic<bool> stop{false};
+        std::atomic<u64> total{0};
 
+        // SIGUSR1 stays blocked everywhere except inside the I/O thread's ppoll, so it can't arrive between
+        // checking stop_requested and going to sleep. Threads inherit the blocked mask
+        sigset_t usr1, ppoll_mask;
+        sigemptyset(&usr1);
+        sigaddset(&usr1, SIGUSR1);
+        pthread_sigmask(SIG_BLOCK, &usr1, &ppoll_mask); // ppoll_mask = the old mask, with SIGUSR1 unblocked
+        io.set_threaded(&ppoll_mask);
+
+        std::vector<std::thread> threads;
         for (u32 i = 0; i < harts.size(); i++) {
-            hart* h = harts[i];
-            if (h->waiting) {
-                continue;
-            }
-            all_waiting = false;
-
-            u64 n = instr_per_tick;
-            if (sim.max_instr != 0 && sim.max_instr - instret < n) {
-                n = sim.max_instr - instret;
-            }
-            u64 done = h->run(n);
-            instret += done;
-            instret_hart[i] += done;
-
-            if (harts.size() > 1) {
-                h->clear_reservation();
-            }
-
-            {
-                std::lock_guard<std::mutex> lock(mmap.lock);
-                mmap.tick();
-            }
-            wake_ready();
-
-            if ((sim.max_instr != 0 && instret >= sim.max_instr) || stop_requested) {
-                break;
-            }
+            threads.emplace_back([&, i]() {
+                hart* h = harts[i];
+                u64 mine = 0;
+                while (!stop.load(std::memory_order_relaxed)) {
+                    u64 done = h->run(instr_per_tick);
+                    mine += done;
+                    if (sim.max_instr != 0 && total.fetch_add(done, std::memory_order_relaxed) + done >= sim.max_instr) {
+                        stop = true;
+                        io.kick();
+                    }
+                    if (h->waiting) {
+                        h->wait_for_interrupt();
+                    }
+                }
+                instret_hart[i] = mine; // read after join
+            });
         }
 
-        if (all_waiting) {
-            io.wait_until_event(); // every hart is parked in WFI: sleep until host input or a device deadline
-            {
-                std::lock_guard<std::mutex> lock(mmap.lock);
-                mmap.tick();
+        while (!stop.load(std::memory_order_relaxed) && !stop_requested) {
+            io.wait_until_event();
+            std::lock_guard<std::mutex> lock(mmap.lock);
+            mmap.tick();
+        }
+
+        stop = true;
+        for (hart* h : harts) {
+            h->request_stop();
+        }
+        for (auto& t : threads) {
+            t.join();
+        }
+        for (u64 n : instret_hart) {
+            instret += n;
+        }
+    } else {
+        // round-robin: every hart that isn't parked in WFI runs one quantum, then devices tick and parked harts
+        // are woken. Waking after every quantum (not once per round) lets an IPI from one hart start the next
+        // one in the same round. The host sleeps only when every hart is parked
+        while ((sim.max_instr == 0 || instret < sim.max_instr) && !stop_requested) {
+            bool all_waiting = true;
+
+            for (u32 i = 0; i < harts.size(); i++) {
+                hart* h = harts[i];
+                if (h->waiting) {
+                    continue;
+                }
+                all_waiting = false;
+
+                u64 n = instr_per_tick;
+                if (sim.max_instr != 0 && sim.max_instr - instret < n) {
+                    n = sim.max_instr - instret;
+                }
+                u64 done = h->run(n);
+                instret += done;
+                instret_hart[i] += done;
+
+                if (harts.size() > 1) {
+                    h->clear_reservation();
+                }
+
+                {
+                    std::lock_guard<std::mutex> lock(mmap.lock);
+                    mmap.tick();
+                }
+                wake_ready();
+
+                if ((sim.max_instr != 0 && instret >= sim.max_instr) || stop_requested) {
+                    break;
+                }
             }
-            wake_ready();
+
+            if (all_waiting) {
+                io.wait_until_event(); // every hart is parked in WFI: sleep until host input or a device deadline
+                {
+                    std::lock_guard<std::mutex> lock(mmap.lock);
+                    mmap.tick();
+                }
+                wake_ready();
+            }
         }
     }
 

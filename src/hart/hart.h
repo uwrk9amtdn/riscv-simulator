@@ -54,6 +54,11 @@ public:
     // hart may store to the reserved address before this one runs again
     void clear_reservation() { reservation_set = false; }
 
+    // threaded mode: sleep until an enabled interrupt is pending (the WFI wake condition) or request_stop()
+    void wait_for_interrupt();
+    // threaded mode: wake the hart's thread out of wait_for_interrupt() so it can see the stop flag
+    void request_stop() { set_line(LINE_KICK, true); }
+
     bool wfi_wake_pending() { return (effective_mip() & mie) != 0; }
 
     // reserved bit of irq_lines: not an interrupt, never visible in mip. Wakes a sleeping hart later (stop, debugger)

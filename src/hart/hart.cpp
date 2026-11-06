@@ -244,6 +244,22 @@ void hart::set_line(u32 bit, bool level)
     irq_dirty.store(true, std::memory_order_release); // may be another thread: after the line, see irq_dirty
 }
 
+void hart::wait_for_interrupt()
+{
+    for (;;) {
+        u32 lines = irq_lines.load(std::memory_order_acquire);
+        if (lines & LINE_KICK) {
+            return; // stop request; the hart stays parked
+        }
+        if (((mip | lines) & mie) != 0) {
+            break; // same test as wfi_wake_pending()
+        }
+        // blocks only while the word is still `lines`: a line raised after the load ends the wait at once
+        irq_lines.wait(lines, std::memory_order_acquire);
+    }
+    waiting = false;
+}
+
 void hart::set_meip(bool level)
 {
     set_line(1u << 11, level);

@@ -15,7 +15,8 @@ Plan, review findings and recommendations: [tlb-plan.md](tlb-plan.md).
 - Done: benchmark driver [bench_tlb.py](bench_tlb.py). It boots `images/s-mode` on a pty, types a
   userspace workload, waits for the marker, then sends SIGUSR1.
 - Done: the full matrix (3 runs each), the devirtualized variants and the M-mode reference (2026-11-06).
-  The default is now `dm`, 64 entries (it was `sa` 64x4).
+  The default is now `dm`, 64 entries (it was `sa` 64x4), and the default build is devirtualized
+  (`RVSIM_TLB_STATIC=DirectMappedTLB`).
 
 ## RAM fast path (2026-11-06)
 
@@ -28,10 +29,12 @@ the slot decode and the size checks from every RAM access.
 | config | MIPS (median, 3 runs) | runs | vs off |
 |---|---|---|---|
 | dm 64, before | 48.52 | 48.32 48.52 48.97 | 1.68x |
-| **dm 64 + RAM fast path** | **63.64** | 68.32 63.64 61.67 | **2.20x** |
+| dm 64 + RAM fast path | 63.64 | 68.32 63.64 61.67 | 2.20x |
+| **static dm 64 + RAM fast path (new default build)** | **73.30** | 75.85 73.30 71.05 | **2.53x** |
 
-That's +31%, more than devirtualizing the TLB gave (+17%). The two gains are independent, so a
-static dm64 build with the fast path should do better still (not measured yet). The M-mode
+That's +31%, more than devirtualizing the TLB gave (+17%). The two gains add up: static dm64 with the
+fast path gets +15% more. That is the default build now: `RVSIM_TLB_STATIC` in `CMakeLists.txt`
+defaults to `DirectMappedTLB`, and a `--tlb` that doesn't match the compiled-in class is an error. The M-mode
 reference (67.8) was measured without the fast path, so it is no longer an upper bound.
 
 The D-TLB miss count of dm64 varies up to 10x between runs (0.54M–5.5M). The guess is guest ASLR:
@@ -41,15 +44,22 @@ fastest), so the MIPS spread here is host noise.
 
 ## How to run
 
+The default build is devirtualized (`RVSIM_TLB_STATIC=DirectMappedTLB`, so only `--tlb=dm` is
+accepted). The matrix needs a build with runtime TLB selection:
+
 ```
-python3 notes/bench_tlb.py --reps 3 --out tlb_results.csv            # full matrix incl. mmode, ~25 min
-python3 notes/bench_tlb.py --only off sa64x4 fa64 --reps 1            # subset
-# devirtualized:
-cmake -S . -B build_static_DirectMappedTLB -DCMAKE_BUILD_TYPE=Release \
-  "-DCMAKE_CXX_FLAGS=-ffunction-sections -fdata-sections -flto -DTLB_STATIC=DirectMappedTLB"
-cmake --build build_static_DirectMappedTLB -j
-python3 notes/bench_tlb.py --rvsim build_static_DirectMappedTLB/rvsim --label static_ --only dm64 dm256
+cmake -S . -B build_dynamic -DCMAKE_BUILD_TYPE=Release -DRVSIM_TLB_STATIC= && cmake --build build_dynamic -j
+python3 notes/bench_tlb.py --rvsim build_dynamic/rvsim --reps 3 --out tlb_results.csv   # full matrix incl. mmode, ~25 min
+python3 notes/bench_tlb.py --rvsim build_dynamic/rvsim --only off sa64x4 fa64 --reps 1  # subset
+python3 notes/bench_tlb.py --only dm64 --reps 3                                         # default build
+# another static class:
+cmake -S . -B build_static_SetAssocTLB -DCMAKE_BUILD_TYPE=Release -DRVSIM_TLB_STATIC=SetAssocTLB
+cmake --build build_static_SetAssocTLB -j
+python3 notes/bench_tlb.py --rvsim build_static_SetAssocTLB/rvsim --label static_ --only sa64x4
 ```
+
+The matrix results below were measured with `-DTLB_STATIC` passed through `CMAKE_CXX_FLAGS`
+(Release + `-flto`). That is the same define the cache variable now sets.
 
 ## Results
 

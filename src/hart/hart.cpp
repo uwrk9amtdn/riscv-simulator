@@ -205,7 +205,10 @@ hart::trap_cause_t hart::access_type_to_page_fault_exception(access_type_t acces
 void hart::set_tlb(const std::string& kind, u32 entries, u32 ways)
 {
 #ifdef TLB_STATIC
-    (void)kind;
+    if (kind != hart_tlb_t::kind) {
+        runtime_error("--tlb=" + kind + ": this build has a fixed --tlb=" + hart_tlb_t::kind +
+                      " TLB, reconfigure with -DRVSIM_TLB_STATIC= for runtime selection");
+    }
     itlb = std::make_unique<hart_tlb_t>(entries, ways);
     dtlb = std::make_unique<hart_tlb_t>(entries, ways);
 #else

@@ -115,6 +115,7 @@ protected:
 
 class NullTLB final : public TLB {
 public:
+    static constexpr const char* kind = "null"; // --tlb name
     NullTLB(u32 = 0, u32 = 0) {}
     std::optional<TLBEntry> lookup(u32, u32) const override { stats_.misses++; return std::nullopt; }
     void insert(const TLBEntry&) override {}
@@ -124,6 +125,7 @@ public:
 
 class DirectMappedTLB final : public tlb_detail::array_tlb {
 public:
+    static constexpr const char* kind = "dm"; // --tlb name
     DirectMappedTLB(u32 entries, u32 = 1) : array_tlb(entries), mask(entries - 1) {}
 
     std::optional<TLBEntry> lookup(u32 va, u32 asid) const override {
@@ -142,6 +144,7 @@ private:
 
 class SetAssocTLB final : public tlb_detail::array_tlb {
 public:
+    static constexpr const char* kind = "sa"; // --tlb name
     SetAssocTLB(u32 entries, u32 ways)
         : array_tlb(entries), ways(ways), set_mask(entries / ways - 1), next(entries / ways, 0) {
         if (!tlb_detail::is_pow2(ways) || ways > entries) {
@@ -188,6 +191,7 @@ private:
 
 class FullyAssocTLB final : public tlb_detail::array_tlb {
 public:
+    static constexpr const char* kind = "fa"; // --tlb name
     FullyAssocTLB(u32 entries, u32 = 0) : array_tlb(entries) {}
 
     std::optional<TLBEntry> lookup(u32 va, u32 asid) const override {

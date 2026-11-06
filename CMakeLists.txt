@@ -31,6 +31,13 @@ add_executable(rvsim
 
 target_compile_features(rvsim PRIVATE cxx_std_20)
 
+# Devirtualized TLB: the hart uses this concrete class directly so lookups inline (+17% measured,
+# see notes/performance.md). Set it empty (-DRVSIM_TLB_STATIC=) to select the TLB at runtime with --tlb
+set(RVSIM_TLB_STATIC "DirectMappedTLB" CACHE STRING "TLB class compiled into the hart, empty for runtime --tlb")
+if (RVSIM_TLB_STATIC)
+    target_compile_definitions(rvsim PRIVATE TLB_STATIC=${RVSIM_TLB_STATIC})
+endif()
+
 target_include_directories(rvsim PRIVATE src/hart/ src/devices/ src/)
 
 add_custom_command(

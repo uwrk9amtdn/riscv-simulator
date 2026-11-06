@@ -10,6 +10,7 @@ import argparse, csv, os, pty, re, select, signal, statistics, subprocess, sys, 
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 IMG = os.path.join(ROOT, "images", "s-mode")
+IMG_M = os.path.join(ROOT, "images", "m-mode")
 
 # user-space work: a shell loop (fork-free), process creation (fork/exec/exit, page faults, ASIDs),
 # and a pipeline that streams 8 MiB through two processes
@@ -27,15 +28,21 @@ CONFIGS += [(f"dm{n}", "dm", n, 1) for n in (16, 64, 256, 1024)]
 CONFIGS += [(f"sa{n}x4", "sa", n, 4) for n in (16, 64, 256, 1024)]
 CONFIGS += [("sa64x2", "sa", 64, 2), ("sa64x8", "sa", 64, 8)]
 CONFIGS += [(f"fa{n}", "fa", n, 0) for n in (8, 16, 32, 64, 128)]
+CONFIGS += [("mmode", "mmode", 0, 0)]  # reference: different kernel/rootfs, no translation
 
 BAD = [b"Oops", b"Kernel panic", b"Segmentation fault", b"Illegal instruction", b"Unable to handle", b"BUG:"]
 
 
-def run_once(rvsim, kind, entries, ways, workload=WORKLOAD, marker=MARKER, timeout=600):
+def run_once(rvsim, kind, entries, ways, workload=WORKLOAD, marker=MARKER, timeout=300):
     master, slave = pty.openpty()
-    cmd = [rvsim, "--bios", f"{IMG}/fw_jump.bin", "--kernel", f"{IMG}/Image",
-           "--initrd", f"{IMG}/rootfs.cpio", "--dtb", os.path.join(ROOT, "build", "soc.dtb"),
-           f"--tlb={kind}", f"--tlb-entries={max(entries, 1)}", f"--tlb-ways={max(ways, 1)}"]
+    dtb = os.path.join(ROOT, "build", "soc.dtb")
+    if kind == "mmode":  # NOMMU kernel in M-mode, no translation; skip the password login
+        cmd = [rvsim, "--kernel", f"{IMG_M}/Image", "--initrd", f"{IMG_M}/rootfs.cpio.gz",
+               "--dtb", dtb, "--tlb=off", "--append", "rdinit=/bin/sh"]
+    else:
+        cmd = [rvsim, "--bios", f"{IMG}/fw_jump.bin", "--kernel", f"{IMG}/Image",
+               "--initrd", f"{IMG}/rootfs.cpio", "--dtb", dtb,
+               f"--tlb={kind}", f"--tlb-entries={max(entries, 1)}", f"--tlb-ways={max(ways, 1)}"]
     p = subprocess.Popen(cmd, stdin=slave, stdout=slave, stderr=subprocess.PIPE)
     os.close(slave)
     out = b""

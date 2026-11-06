@@ -100,9 +100,9 @@ static volatile sig_atomic_t stop_requested = 0;
 static void on_sigusr1(int) { stop_requested = 1; }
 
 struct sim_options {
-    std::string tlb_kind = "sa";
+    std::string tlb_kind = "dm";
     u32 tlb_entries = 64;
-    u32 tlb_ways = 4;
+    u32 tlb_ways = 1;
     u64 max_instr = 0; // 0: run forever
 };
 

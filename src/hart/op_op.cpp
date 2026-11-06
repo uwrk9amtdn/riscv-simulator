@@ -1,28 +1,28 @@
 #include <hart.h>
 
-void hart::decode_op()
+hart::handler_t hart::decode_op()
 {
     switch (funct3 | (funct7 << 3)) {
-        case FUNCT10_ADD:    return inst_add();
-        case FUNCT10_SUB:    return inst_sub();
-        case FUNCT10_SLL:    return inst_sll();
-        case FUNCT10_SLT:    return inst_slt();
-        case FUNCT10_SLTU:   return inst_sltu();
-        case FUNCT10_XOR:    return inst_xor();
-        case FUNCT10_SRL:    return inst_srl();
-        case FUNCT10_SRA:    return inst_sra();
-        case FUNCT10_OR:     return inst_or();
-        case FUNCT10_AND:    return inst_and();
-        case FUNCT10_MUL:    return inst_mul();
-        case FUNCT10_MULH:   return inst_mulh();
-        case FUNCT10_MULHSU: return inst_mulhsu();
-        case FUNCT10_MULHU:  return inst_mulhu();
-        case FUNCT10_DIV:    return inst_div();
-        case FUNCT10_DIVU:   return inst_divu();
-        case FUNCT10_REM:    return inst_rem();
-        case FUNCT10_REMU:   return inst_remu();
+        case FUNCT10_ADD:    return &thunk<&hart::inst_add>;
+        case FUNCT10_SUB:    return &thunk<&hart::inst_sub>;
+        case FUNCT10_SLL:    return &thunk<&hart::inst_sll>;
+        case FUNCT10_SLT:    return &thunk<&hart::inst_slt>;
+        case FUNCT10_SLTU:   return &thunk<&hart::inst_sltu>;
+        case FUNCT10_XOR:    return &thunk<&hart::inst_xor>;
+        case FUNCT10_SRL:    return &thunk<&hart::inst_srl>;
+        case FUNCT10_SRA:    return &thunk<&hart::inst_sra>;
+        case FUNCT10_OR:     return &thunk<&hart::inst_or>;
+        case FUNCT10_AND:    return &thunk<&hart::inst_and>;
+        case FUNCT10_MUL:    return &thunk<&hart::inst_mul>;
+        case FUNCT10_MULH:   return &thunk<&hart::inst_mulh>;
+        case FUNCT10_MULHSU: return &thunk<&hart::inst_mulhsu>;
+        case FUNCT10_MULHU:  return &thunk<&hart::inst_mulhu>;
+        case FUNCT10_DIV:    return &thunk<&hart::inst_div>;
+        case FUNCT10_DIVU:   return &thunk<&hart::inst_divu>;
+        case FUNCT10_REM:    return &thunk<&hart::inst_rem>;
+        case FUNCT10_REMU:   return &thunk<&hart::inst_remu>;
     }
-    throw trap{trap_cause_t::illegal_instruction_exception, inst};
+    return &thunk<&hart::inst_illegal>;
 }
 void hart::inst_add() {
     regs[rd] = regs[rs1] + regs[rs2];

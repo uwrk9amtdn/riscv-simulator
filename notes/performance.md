@@ -120,12 +120,7 @@ This run also showed the bad data-table case: 12M fast-D fills, against about 2.
 2. ~~**Run instructions in batches inside the hart**~~. Done, +10.8%, see below.
 3. ~~**Check interrupts only when something changes**~~. Done, +12.0%, see below.
 4. ~~**Fix the fast-D conflict case**~~. Investigated and dropped, see below.
-5. **Decoded-instruction cache**, the largest change and the largest gain (targets the ~30% in
-   decode and dispatch). Per RAM code page, cache a decoded entry per instruction (handler, `rd`,
-   `rs1`, `rs2`, sign-extended `imm`). Builds on the fetch-page cache. Stores to a page with
-   decoded code must invalidate it: leave the fast-TLB write tag unset for those pages, so stores
-   take the slow path and drop the page. `fence.i` flushes all. Linux does patch its own code
-   (boot-time alternatives, module loading), so this needs care.
+5. ~~**Decoded-instruction cache**~~. Done, about +14%, see below.
 
 Suggested order: 1 → 2 → 3, measuring after each, then 4, then 5 as its own task.
 
@@ -183,6 +178,54 @@ run. In the second variant the inline hit path is unchanged, so the cost is most
 reliably here, so the direct-mapped table stays. Revisit if flushes get cheaper (for example a
 generation counter in the tags) or if a workload with a persistent conflict shows up.
 
+## Decoded-instruction cache (2026-11-06)
+
+A memo of `decode(raw)` in front of the decoders ([hart.cpp](../src/hart/hart.cpp) `execute()`,
+`decode_into()`). `dcache[(pc >> 2) & mask]` holds `{raw, imm, handler}`. After the fetch, a hit is
+`entry.raw == inst`. Then `rd`/`rs1`/`rs2` are taken from `inst` with shifts, `imm` from the
+entry, and the handler is called through a plain function pointer (`thunk<&hart::inst_x>`, which
+inlines the member handler). A miss decodes into the entry.
+
+- The decoded form depends only on the instruction word, so an entry is valid whenever its `raw`
+  equals the fetched word. Self-modifying code, `fence.i`, code written by another hart and
+  virtual aliases need no invalidation. A changed word misses and is decoded again.
+- The `decode_*` functions return the handler instead of calling it, and illegal encodings
+  return `inst_illegal`. They stay pure functions of the word. Privilege checks remain in the
+  handlers.
+- The immediates are decoded once per format in `decode_into` (U, J, I, B, S), with the same
+  expressions the handlers used. The handlers read `imm`. CSR handlers still take the CSR
+  number from `inst`, which every fetch still sets.
+- Empty entries are `raw = 0` → `inst_illegal`. That's correct, because the all-zero word is illegal.
+
+Size: 4 alternating rounds of all builds on an idle host (load average 0.05). The decode counts
+are deterministic. Earlier rounds were run while another process on the host used CPU, and gave
+misleading numbers (for example +1.1% for 256K × 24 B).
+
+| entries × entry size | memory | decodes | hit rate | median MIPS | vs base |
+|---|---|---|---|---|---|
+| base (previous commit) | | | | 172.75 | |
+| 16K × 24 B (with rd/rs1/rs2) | 384 KiB | 36.5M | 94.6% | 181.39 | +5.0% |
+| 64K × 24 B | 1.5 MiB | 11.0M | 98.4% | 188.87 | +9.3% |
+| 256K × 24 B | 6 MiB | 1.70M | 99.75% | 189.75 | +9.8% |
+| 64K × 16 B | 1 MiB | 10.9M | 98.4% | 193.41 | +12.0% |
+| 128K × 16 B | 2 MiB | 3.79M | 99.44% | 197.03 | +14.1% |
+| **256K × 16 B (chosen)** | **4 MiB** | **1.70M** | **99.75%** | **196.02** | **+13.5%** |
+
+The hot code (kernel plus busybox) needs more than 64 KiB of coverage. 16-byte entries (`rd`/`rs1`/`rs2`
+taken from `raw` instead of stored) beat 24-byte ones by 3-4% at every size, because the table's host
+cache footprint matters. 128K and 256K × 16 B are within noise. 256K is chosen because it won 3 of 4 head-to-head rounds and
+has the higher mean (196.0 vs 194.8; the median favors 128K by one run). It costs 4 MiB per hart, so
+128K is the fallback if memory matters with many harts.
+
+Testing: the new `bench_tlb.py --check` runs a workload with known output (the shell loop count,
+the md5 of 8 MiB of zeros, the md5 of `/bin/busybox`, shell arithmetic with negative division). It
+fails if a value is missing, so wrong results are caught, not only crashes. Same output before and
+after. The M-mode image runs at 179.77 MIPS.
+
+Next step if needed: a per-physical-page decoded array (found through the fetch-page cache) would
+have no conflict or capacity misses and no index masking. Or basic blocks, which need
+store-side invalidation.
+
 ## How to run
 
 The default build is devirtualized (`RVSIM_TLB_STATIC=DirectMappedTLB`, so only `--tlb=dm` is
@@ -193,6 +236,7 @@ cmake -S . -B build_dynamic -DCMAKE_BUILD_TYPE=Release -DRVSIM_TLB_STATIC= && cm
 python3 notes/bench_tlb.py --rvsim build_dynamic/rvsim --reps 3 --out tlb_results.csv   # full matrix incl. mmode, ~25 min
 python3 notes/bench_tlb.py --rvsim build_dynamic/rvsim --only off sa64x4 fa64 --reps 1  # subset
 python3 notes/bench_tlb.py --only dm64 --reps 3                                         # default build
+python3 notes/bench_tlb.py --check                                                      # known-output correctness run
 # another static class:
 cmake -S . -B build_static_SetAssocTLB -DCMAKE_BUILD_TYPE=Release -DRVSIM_TLB_STATIC=SetAssocTLB
 cmake --build build_static_SetAssocTLB -j

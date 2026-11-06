@@ -44,6 +44,7 @@ public:
 
     struct fast_tlb_stats_t { u64 ifills = 0, dfills = 0, flushes = 0; };
     const fast_tlb_stats_t& get_fast_tlb_stats() const { return fast_stats; }
+    u64 get_decodes() const { return decodes; }
 
     bool waiting = false;
 
@@ -337,18 +338,44 @@ private:
     std::unique_ptr<hart_tlb_t> dtlb;
 
 private:
-    void decode_lui();
-    void decode_auipc();
-    void decode_jal();
-    void decode_jalr();
-    void decode_branch();
-    void decode_load();
-    void decode_store();
-    void decode_imm();
-    void decode_op();
-    void decode_misc_mem();
-    void decode_system();
-    void decode_amo();
+    // decoded-instruction cache: a memo of decode(raw), indexed by pc. The decoded form depends only on
+    // the 32 bit instruction word, so an entry is valid whenever its raw word equals the fetched one.
+    // Self-modifying code, fence.i, other harts writing code and virtual aliases need no invalidation:
+    // a changed word just misses and is decoded again
+    using handler_t = void (*)(hart&);
+
+    // plain function pointer to a member handler; the handler is inlined into the thunk
+    template <void (hart::*F)()>
+    static void thunk(hart& h) { (h.*F)(); }
+
+    // 16 bytes: rd/rs1/rs2 are cheap to take from raw again, so they are not stored
+    struct decoded {
+        u32 raw;
+        i32 imm; // sign-extended and reassembled for the instruction's format
+        handler_t handler;
+    };
+
+    static constexpr u32 DCACHE_BITS = 18;
+    static constexpr u32 DCACHE_MASK = (1u << DCACHE_BITS) - 1;
+    std::unique_ptr<decoded[]> dcache;
+    u64 decodes = 0;
+
+    void decode_into(decoded& d); // decodes inst
+
+    void inst_illegal();
+
+    handler_t decode_lui();
+    handler_t decode_auipc();
+    handler_t decode_jal();
+    handler_t decode_jalr();
+    handler_t decode_branch();
+    handler_t decode_load();
+    handler_t decode_store();
+    handler_t decode_imm();
+    handler_t decode_op();
+    handler_t decode_misc_mem();
+    handler_t decode_system();
+    handler_t decode_amo();
 
 private:
     void csr_rw_misa          (u32 rm, u32 wm, u32& rd, u32 wd);

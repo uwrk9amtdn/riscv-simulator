@@ -21,6 +21,17 @@ WORKLOAD = (
     "echo BENCH_$((40+2))_DONE"
 )
 MARKER = b"BENCH_42_DONE"
+
+# --check: a workload with known output, to catch wrong results (not only crashes). md5 of 8 MiB of
+# zeros is fixed, the busybox md5 is the one of images/s-mode/rootfs.cpio
+CHECK_WORKLOAD = (
+    "i=0; while [ $i -lt 20000 ]; do i=$((i+1)); done; echo I=$i; "
+    "dd if=/dev/zero bs=4096 count=2048 2>/dev/null | md5sum; md5sum /bin/busybox; "
+    "echo $((7*191-3)) $((1<<20)) $((-17/5)) $((-17%5)); echo CHECK_$((40+2))_DONE"
+)
+CHECK_MARKER = b"CHECK_42_DONE"
+CHECK_EXPECT = ["I=20000", "96995b58d4cbf6aaa9041b4f00c7f6ae  -",
+                "dcfb00dc78aaa8b104be99eb23b6bd56  /bin/busybox", "1334 1048576 -3 -2"]
 PROMPT = b"~ # "
 
 CONFIGS = [("off", "off", 0, 0), ("null", "null", 0, 0)]
@@ -91,7 +102,16 @@ def main():
     ap.add_argument("--only", nargs="*")
     ap.add_argument("--rvsim", default=os.path.join(ROOT, "build", "rvsim"))
     ap.add_argument("--label", default="")
+    ap.add_argument("--check", action="store_true", help="run the known-output workload once and verify it")
     a = ap.parse_args()
+
+    if a.check:
+        st, out = run_once(a.rvsim, "dm", 64, 1, workload=CHECK_WORKLOAD, marker=CHECK_MARKER)
+        text = out.decode(errors="replace")
+        text = text[text.rindex("echo CHECK_") + 1:]  # only the output, not the echoed command line
+        missing = [e for e in CHECK_EXPECT if e not in text]
+        print("check:", "FAIL missing " + repr(missing) if missing or st["bad"] else "ok", st["bad"])
+        sys.exit(1 if missing or st["bad"] else 0)
 
     rows = []
     for name, kind, n, w in CONFIGS:

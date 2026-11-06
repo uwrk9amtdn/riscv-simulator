@@ -1,13 +1,12 @@
 #include <hart.h>
 
-void hart::decode_auipc()
+hart::handler_t hart::decode_auipc()
 {
-    inst_auipc();
+    return &thunk<&hart::inst_auipc>;
 }
 
 void hart::inst_auipc()
 {
-    imm = get_part_signed(inst, 31, 12, 12);
     regs[rd] = pc + imm;
     pc = pc + 4;
 }

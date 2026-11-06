@@ -329,6 +329,7 @@ int main(int argc, char** argv)
     const auto& fs = hart_0.get_fast_tlb_stats();
     fprintf(stderr, " fast_ifills=%llu fast_dfills=%llu fast_flushes=%llu", (unsigned long long)fs.ifills,
             (unsigned long long)fs.dfills, (unsigned long long)fs.flushes);
+    fprintf(stderr, " decodes=%llu", (unsigned long long)hart_0.get_decodes());
     fprintf(stderr, "\n");
 
     return 0;

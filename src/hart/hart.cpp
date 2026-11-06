@@ -13,6 +13,12 @@ hart::hart(::mmio* mmio, u32 mhartid, u32 pc)
 
     fast_flush();
     fast_stats = {};
+
+    // raw 0 is an illegal instruction, so the initial entries are already correct
+    dcache = std::make_unique<decoded[]>(1u << DCACHE_BITS);
+    for (u32 i = 0; i < (1u << DCACHE_BITS); i++) {
+        dcache[i] = {0, 0, &thunk<&hart::inst_illegal>};
+    }
 }
 
 void hart::check_interrupts()
@@ -64,6 +70,21 @@ void hart::execute()
 {
     fetch();
 
+    decoded& d = dcache[(pc >> 2) & DCACHE_MASK];
+    if (d.raw != inst) [[unlikely]] {
+        decode_into(d);
+    }
+
+    rd  = (inst >> 7) & 31;
+    rs1 = (inst >> 15) & 31;
+    rs2 = (inst >> 20) & 31;
+    imm = d.imm;
+
+    d.handler(*this);
+}
+
+void hart::decode_into(decoded& d)
+{
     opcode = get_part(inst,  6,  0);
     rs1    = get_part(inst, 19, 15);
     rs2    = get_part(inst, 24, 20);
@@ -72,24 +93,45 @@ void hart::execute()
     funct7 = get_part(inst, 31, 25);
 
     // clang-format off
+    i32 im = 0;
     switch (opcode) {
-        case OP_LUI:      decode_lui();      break;
-        case OP_AUIPC:    decode_auipc();    break;
-        case OP_JAL:      decode_jal();      break;
-        case OP_JALR:     decode_jalr();     break;
-        case OP_BRANCH:   decode_branch();   break;
-        case OP_LOAD:     decode_load();     break;
-        case OP_STORE:    decode_store();    break;
-        case OP_IMM:      decode_imm();      break;
-        case OP_OP:       decode_op();       break;
-        case OP_MISC_MEM: decode_misc_mem(); break;
-        case OP_SYSTEM:   decode_system();   break;
-        case OP_AMO:      decode_amo();      break;
-        default:
-            throw trap{trap_cause_t::illegal_instruction_exception, inst};
-            break;
+        case OP_LUI:
+        case OP_AUIPC:  im = get_part_signed(inst, 31, 12, 12); break;                // U
+        case OP_JAL:    im = sign_extend(get_part(inst, 31, 31, 20) | get_part(inst, 19, 12, 12) |
+                                         get_part(inst, 20, 20, 11) | get_part(inst, 30, 21, 1), 20); break; // J
+        case OP_JALR:
+        case OP_LOAD:
+        case OP_IMM:    im = get_part_signed(inst, 31, 20); break;                    // I
+        case OP_BRANCH: im = sign_extend(get_part(inst, 31, 31, 12) | get_part(inst, 7, 7, 11) |
+                                         get_part(inst, 30, 25, 5) | get_part(inst, 11, 8, 1), 12); break; // B
+        case OP_STORE:  im = get_part_signed(inst, 31, 25, 5) + get_part(inst, 11, 7); break; // S
+    }
+
+    handler_t h;
+    switch (opcode) {
+        case OP_LUI:      h = decode_lui();      break;
+        case OP_AUIPC:    h = decode_auipc();    break;
+        case OP_JAL:      h = decode_jal();      break;
+        case OP_JALR:     h = decode_jalr();     break;
+        case OP_BRANCH:   h = decode_branch();   break;
+        case OP_LOAD:     h = decode_load();     break;
+        case OP_STORE:    h = decode_store();    break;
+        case OP_IMM:      h = decode_imm();      break;
+        case OP_OP:       h = decode_op();       break;
+        case OP_MISC_MEM: h = decode_misc_mem(); break;
+        case OP_SYSTEM:   h = decode_system();   break;
+        case OP_AMO:      h = decode_amo();      break;
+        default:          h = &thunk<&hart::inst_illegal>; break;
     }
     // clang-format on
+
+    d = {inst, im, h};
+    decodes++;
+}
+
+void hart::inst_illegal()
+{
+    throw trap{trap_cause_t::illegal_instruction_exception, inst};
 }
 
 void hart::take_trap(const trap& t)

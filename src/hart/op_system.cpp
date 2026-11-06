@@ -1,50 +1,50 @@
 
 #include <hart.h>
 
-void hart::decode_system()
+hart::handler_t hart::decode_system()
 {
     switch (funct3) {
         case FUNCT3_SYSTEM_OTHER: {
             if (rd != 0) {
-                throw trap{trap_cause_t::illegal_instruction_exception, inst};
+                return &thunk<&hart::inst_illegal>;
             }
 
             if (get_part(inst, 31, 15) == FUNCT_31_15_SRET) {
-                return inst_sret();
+                return &thunk<&hart::inst_sret>;
             }
 
             if (get_part(inst, 31, 15) == FUNCT_31_15_MRET) {
-                return inst_mret();
+                return &thunk<&hart::inst_mret>;
             }
 
             if (get_part(inst, 31, 15) == FUNCT_31_15_WFI) {
-                return inst_wfi();
+                return &thunk<&hart::inst_wfi>;
             }
 
             if (get_part(inst, 31, 25) == FUNCT_31_25_SFENCE_VMA) {
-                return inst_sfence_vma();
+                return &thunk<&hart::inst_sfence_vma>;
             }
 
             if (get_part(inst, 31, 15) == FUNCT_31_15_ECALL) {
-                return inst_ecall();
+                return &thunk<&hart::inst_ecall>;
             }
 
             if (get_part(inst, 31, 15) == FUNCT_31_15_EBREAK) {
-                return inst_ebreak();
+                return &thunk<&hart::inst_ebreak>;
             }
 
-            throw trap{trap_cause_t::illegal_instruction_exception, inst};
+            return &thunk<&hart::inst_illegal>;
 
         } break;
 
-        case FUNCT3_CSRRW:  return inst_csrrw ();
-        case FUNCT3_CSRRS:  return inst_csrrs ();
-        case FUNCT3_CSRRC:  return inst_csrrc ();
-        case FUNCT3_CSRRWI: return inst_csrrwi();
-        case FUNCT3_CSRRSI: return inst_csrrsi();
-        case FUNCT3_CSRRCI: return inst_csrrci();
+        case FUNCT3_CSRRW:  return &thunk<&hart::inst_csrrw>;
+        case FUNCT3_CSRRS:  return &thunk<&hart::inst_csrrs>;
+        case FUNCT3_CSRRC:  return &thunk<&hart::inst_csrrc>;
+        case FUNCT3_CSRRWI: return &thunk<&hart::inst_csrrwi>;
+        case FUNCT3_CSRRSI: return &thunk<&hart::inst_csrrsi>;
+        case FUNCT3_CSRRCI: return &thunk<&hart::inst_csrrci>;
     }
-    throw trap{trap_cause_t::illegal_instruction_exception, inst};
+    return &thunk<&hart::inst_illegal>;
 }
 
 void hart::inst_ecall() {

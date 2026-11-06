@@ -1,21 +1,21 @@
 #include <hart.h>
 
-void hart::decode_store()
+hart::handler_t hart::decode_store()
 {
     switch (funct3) {
-        case FUNCT3_SB: return inst_sb();
-        case FUNCT3_SH: return inst_sh();
-        case FUNCT3_SW: return inst_sw();
+        case FUNCT3_SB: return &thunk<&hart::inst_sb>;
+        case FUNCT3_SH: return &thunk<&hart::inst_sh>;
+        case FUNCT3_SW: return &thunk<&hart::inst_sw>;
     }
 
-    throw trap{trap_cause_t::illegal_instruction_exception, inst};
+    return &thunk<&hart::inst_illegal>;
 }
 
 void hart::inst_sb() {
     u32 addr;
     u32 data;
 
-    addr = regs[rs1] + get_part_signed(inst, 31, 25, 5) + get_part(inst, 11, 7);
+    addr = regs[rs1] + imm;
     data = regs[rs2];
     store(addr, 1, (u8*)&data);
 
@@ -26,7 +26,7 @@ void hart::inst_sh() {
     u32 addr;
     u32 data;
 
-    addr = regs[rs1] + get_part_signed(inst, 31, 25, 5) + get_part(inst, 11, 7);
+    addr = regs[rs1] + imm;
 
     if (addr & 0x01) {
         throw trap{trap_cause_t::store_amo_address_misaligned_exception, addr};
@@ -42,7 +42,7 @@ void hart::inst_sw() {
     u32 addr;
     u32 data;
 
-    addr = regs[rs1] + get_part_signed(inst, 31, 25, 5) + get_part(inst, 11, 7);
+    addr = regs[rs1] + imm;
 
     if (addr & 0x03) {
         throw trap{trap_cause_t::store_amo_address_misaligned_exception, addr};

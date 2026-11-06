@@ -1,13 +1,12 @@
 #include <hart.h>
 
-void hart::decode_lui()
+hart::handler_t hart::decode_lui()
 {
-    inst_lui();
+    return &thunk<&hart::inst_lui>;
 }
 
 void hart::inst_lui()
 {
-    imm = get_part_signed(inst, 31, 12, 12);
     regs[rd] = imm;
     pc = pc + 4;
 }

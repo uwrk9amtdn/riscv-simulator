@@ -1,31 +1,31 @@
 
 #include <hart.h>
 
-void hart::decode_amo()
+hart::handler_t hart::decode_amo()
 {
     u32 funct5 = get_part(inst, 31, 27);
     // u32 aq = get_part(inst, 26, 26);
     // u32 rl = get_part(inst, 25, 25);
 
     if (funct3 != FUNCT3_AMO) {
-        throw trap{trap_cause_t::illegal_instruction_exception, inst};
+        return &thunk<&hart::inst_illegal>;
     }
 
     switch (funct5) {
-        case FUNCT5_LR_W:       return inst_lr_w();
-        case FUNCT5_SC_W:       return inst_sc_w();
-        case FUNCT5_AMOSWAP_W:  return inst_amoswap_w();
-        case FUNCT5_AMOADD_W:   return inst_amoadd_w();
-        case FUNCT5_AMOXOR_W:   return inst_amoxor_w();
-        case FUNCT5_AMOAND_W:   return inst_amoand_w();
-        case FUNCT5_AMOOR_W:    return inst_amoor_w();
-        case FUNCT5_AMOMIN_W:   return inst_amomin_w();
-        case FUNCT5_AMOMAX_W:   return inst_amomax_w();
-        case FUNCT5_AMOMINU_W:  return inst_amominu_w();
-        case FUNCT5_AMOMAXU_W:  return inst_amomaxu_w();
+        case FUNCT5_LR_W:       return &thunk<&hart::inst_lr_w>;
+        case FUNCT5_SC_W:       return &thunk<&hart::inst_sc_w>;
+        case FUNCT5_AMOSWAP_W:  return &thunk<&hart::inst_amoswap_w>;
+        case FUNCT5_AMOADD_W:   return &thunk<&hart::inst_amoadd_w>;
+        case FUNCT5_AMOXOR_W:   return &thunk<&hart::inst_amoxor_w>;
+        case FUNCT5_AMOAND_W:   return &thunk<&hart::inst_amoand_w>;
+        case FUNCT5_AMOOR_W:    return &thunk<&hart::inst_amoor_w>;
+        case FUNCT5_AMOMIN_W:   return &thunk<&hart::inst_amomin_w>;
+        case FUNCT5_AMOMAX_W:   return &thunk<&hart::inst_amomax_w>;
+        case FUNCT5_AMOMINU_W:  return &thunk<&hart::inst_amominu_w>;
+        case FUNCT5_AMOMAXU_W:  return &thunk<&hart::inst_amomaxu_w>;
     }
 
-    throw trap{trap_cause_t::illegal_instruction_exception, inst};
+    return &thunk<&hart::inst_illegal>;
 
 }
 

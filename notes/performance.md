@@ -27,16 +27,12 @@ speed varies between sessions, so only A/B numbers from the same session compare
 
 Next steps:
 
-1. ~~**Fresh profile**~~. Done, see "Profile after the decode cache" below. There's no single cheap
-   item left. The one medium step is passing operands to handlers directly (about 21% is spent
-   writing `rd`/`rs1`/`rs2`/`imm` into members and reading them back).
-2. **Bigger interpreter changes** (each a project of its own):
-   - Basic blocks / threaded code: run straight-line runs of decoded instructions without going
-     back through `execute()` per instruction. A block spans several words, so the raw-word compare
-     no longer works cheaply. This needs store-side invalidation of decoded pages (for example,
-     no fast-TLB write tag for pages with decoded code, so stores to them take the slow path).
-   - JIT to host code, as QEMU does. QEMU ran the same images and workload in 1.35 s of CPU time,
-     about 2.5× faster than now.
+1. ~~**Fresh profile**~~. Done, see "Profile after the decode cache" below. Both cheap follow-ups
+   were measured and gave nothing: passing operands to handlers as arguments, and turning off GCC's
+   default hardening flags. The remaining cost is latency, not instruction count (see below).
+2. **Block-level execution** (large, not started). See "Design: block-level execution" below. A JIT
+   to host code, as QEMU does, would be the step after that. QEMU ran the same images and workload
+   in 1.35 s of CPU time, about 2.5x faster than now.
 3. **Multicore** ([multicore-plan.md](multicore-plan.md)). The plan predates the fast paths, so
    these interactions are new:
    - Fast TLB hits do plain `memcpy` into host RAM. Phase 4.1's rule (aligned RAM accesses through
@@ -53,6 +49,101 @@ Next steps:
      fetched word.
    - Memory: the decode cache is 4 MiB per hart. 128K entries (2 MiB) measured within noise and is
      the fallback for many harts.
+
+## Operands as handler arguments, and hardening flags: no gain (2026-11-06)
+
+**Operands as arguments** (the "medium step" from the profile): handlers became
+`inst_x(u32 raw, i32 imm)`, with `rd`/`rs1`/`rs2` taken from `raw` in the handler, and the
+`rd`/`rs1`/`rs2`/`imm` members removed. It was correct (`--check` passes) and the member stores and
+reloads were gone in the generated code, but there was no gain:
+
+| build | median MIPS (5 rounds) |
+|---|---|
+| committed | 195.22 |
+| operands as arguments, `get_part` accessors | 191.95 |
+| operands as arguments, raw-shift accessors | 192.84 |
+
+The `lw` hot path went from 25 to 29 instructions. The member reloads were L1 hits forwarded from
+the stores just made, and the shifts that replaced them cost about the same. So the profile's ~21%
+on those lines was mostly stall time showing up on the next instruction (the decode-cache entry
+load and the indirect call), not the stores. Reverted.
+
+**GCC's default hardening flags**: this GCC enables `-fstack-protector-strong`,
+`-fcf-protection=full` and PIE. The stack protector adds a canary check to every handler with an
+address-taken local (about 5 instructions on each `lw`/`sw`/`lbu`/`sb`). `cf-protection` puts an
+`endbr64` at every handler entry.
+
+| build flags | median MIPS (5 rounds) |
+|---|---|
+| default | 196.91 |
+| `-fno-stack-protector` | 194.68 |
+| + `-fcf-protection=none` | 194.41 |
+| + `-fno-pie -no-pie` | 198.18 |
+
+All within noise, so the defaults stay (they are also worth keeping for a program that handles
+guest input).
+
+**Conclusion**: removing instructions that don't depend on the slow loads doesn't help, because the
+CPU runs them in parallel with work it is already waiting on. The time per guest instruction is set
+by a chain of dependent steps: load the decode-cache entry, make an indirect call that is hard to
+predict, then the handler's own dependent loads. Only structural changes shorten that chain:
+blocks, and threaded dispatch, which also makes the indirect jumps easier to predict (see below).
+
+## Design: block-level execution (not implemented)
+
+**Idea.** A basic block is a run of instructions with no branch in the middle. It ends at a
+branch or jump, at an instruction that changes machine state (CSR access, `ecall`/`ebreak`,
+`mret`/`sret`, `fence.i`, `sfence.vma`, `wfi`), or at the end of the page. Inside a block the next
+instruction is always the following word, so the block is decoded once into an array and run
+without per-instruction lookups:
+
+```cpp
+struct op    { handler_t handler; u32 raw; i32 imm; };
+struct block { u32 start_pc; u32 count; op ops[]; };
+
+block* b = lookup_block(pc);           // one lookup per block, built on a miss
+for (u32 k = 0; k < b->count; k++) {
+    b->ops[k].handler(*this, b->ops[k].raw, b->ops[k].imm);
+    if (irq_dirty) [[unlikely]] break;  // MMIO store or CSR write inside the block
+}
+```
+
+**What it removes per instruction**: the fetch (~7%), the decode-cache index, compare and lookup
+(part of ~9%) and most of the loop overhead (~6%). With operands passed as arguments (the medium
+step), it is also the natural place for threaded dispatch: each handler tail-calls the next one
+(`[[gnu::musttail]]`, GCC 15+). That removes the central loop, and gives each handler its own
+indirect jump, which the CPU predicts much better than one shared jump. Estimate: +20-40%, more
+with threaded dispatch.
+
+**Details that are simple**:
+
+- Traps in the middle of a block need no special handling: handlers update `pc` themselves, so `pc`
+  is correct when an exception is thrown.
+- `run(n)` counts its budget per block.
+- Blocks are looked up by physical start address (found through the fetch-page cache), so aliases
+  share them and they survive context switches and fast-TLB flushes. A block never crosses a page,
+  so one translation and execute-permission check covers it.
+
+**Invalidation is the hard part.** The decode cache checks each word against memory on every run,
+so it never needs invalidation. A block covers many words, and checking them all would bring back
+the fetch it is meant to remove. So blocks have to be dropped when their code is written:
+
+1. Track which physical pages hold blocks ("code pages").
+2. Never set the fast-TLB write tag for a code page, so every store to it takes the slow path.
+3. In `store_slow`/`bus_store`, the walker's A/D writes and AMOs: a store to a code page drops all
+   blocks of that page and clears the mark (or bumps a per-page generation that blocks check).
+4. Linux does write code: boot-time patching of alternative instruction sequences, module loading,
+   and every `exec` that loads a program into pages that held other code.
+
+**Multicore makes this harder.** Another hart can write a code page. The code-page marks must be
+shared, and when a page becomes code, every hart's fast TLB has to drop its write tag for that
+page: cross-thread invalidation. QEMU uses global page flags and locks around block creation for
+this. So blocks should come after multicore, or be designed for it from the start. Retrofitting
+cross-hart invalidation onto a single-hart block cache is much harder.
+
+**Testing**: besides `--check`, a self-modifying-code test program (write an instruction, run it,
+change it, run it again), built with the RISC-V toolchain in `/opt/riscv-toolchain` and added to
+the rootfs.
 
 ## Profile after the decode cache (2026-11-06)
 

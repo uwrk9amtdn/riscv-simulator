@@ -15,176 +15,212 @@ hart::hart(::mmio* mmio, u32 mhartid, u32 pc)
     fast_stats = {};
 }
 
-void hart::step()
+void hart::check_interrupts()
 {
-    try {
+    {
+        u32 mip = effective_mip();
+        u32 mp = mip & mie & ~mideleg;
+        u32 sp = mip & mie & mideleg;
 
-        {
-            u32 mip = effective_mip();
-            u32 mp = mip & mie & ~mideleg;
-            u32 sp = mip & mie & mideleg;
-
-            switch(priv) {
-                case 0b11: {
-                    if (!mstatus.MIE()) {
-                        mp = 0;
-                    }
-                    sp = 0;
-                    break;
+        switch(priv) {
+            case 0b11: {
+                if (!mstatus.MIE()) {
+                    mp = 0;
                 }
-                case 0b01: {
-                    if (!mstatus.SIE()) {
-                        sp = 0;
-                    }
-                    break;
-                }
-                case 0b00: {
-                    break;
-                }
-            }
-
-            if (mp | sp) {
-
-                u32 order [] = {11, 3, 7, 9, 1, 5};
-                u32 c;
-
-                for (int i = 0; i < 6; i++) {
-                    if (get_bit(mp | sp, order[i])) {
-                        c = order[i];
-                        break;
-                    }
-                }
-
-                c = set_bit(c, 31);
-
-                throw trap{static_cast<trap_cause_t>(c), 0};
-            }
-        }
-
-        fetch();
-
-        opcode = get_part(inst,  6,  0);
-        rs1    = get_part(inst, 19, 15);
-        rs2    = get_part(inst, 24, 20);
-        rd     = get_part(inst, 11,  7);
-        funct3 = get_part(inst, 14, 12);
-        funct7 = get_part(inst, 31, 25);
-
-        // clang-format off
-        switch (opcode) {
-            case OP_LUI:      decode_lui();      break;
-            case OP_AUIPC:    decode_auipc();    break;
-            case OP_JAL:      decode_jal();      break;
-            case OP_JALR:     decode_jalr();     break;
-            case OP_BRANCH:   decode_branch();   break;
-            case OP_LOAD:     decode_load();     break;
-            case OP_STORE:    decode_store();    break;
-            case OP_IMM:      decode_imm();      break;
-            case OP_OP:       decode_op();       break;
-            case OP_MISC_MEM: decode_misc_mem(); break;
-            case OP_SYSTEM:   decode_system();   break;
-            case OP_AMO:      decode_amo();      break;
-            default:
-                throw trap{trap_cause_t::illegal_instruction_exception, inst};
+                sp = 0;
                 break;
-        }
-        // clang-format on
-
-    } catch (trap t) {
-
-        u32 cause;
-        bool intr;
-
-        cause = static_cast<u32>(t.cause);
-        intr = get_bit(cause, 31);
-        cause = get_part(cause, 4, 0);
-
-        bool delegate = false;
-
-        if (priv != 0b11) {
-            if (intr) {
-                if (get_bit(mideleg, cause)) {
-                    delegate = true;
+            }
+            case 0b01: {
+                if (!mstatus.SIE()) {
+                    sp = 0;
                 }
-            } else {
-                if (get_bit(medeleg, cause)) {
-                    delegate = true;
-                }
+                break;
+            }
+            case 0b00: {
+                break;
             }
         }
 
-        if (delegate) {
-            scause = static_cast<u32>(t.cause);
-            stval = t.value;
+        if (mp | sp) {
 
-            mstatus.SPIE() = mstatus.SIE();
-            mstatus.SIE() = 0b0;
-            mstatus.SPP() = priv;
+            u32 order [] = {11, 3, 7, 9, 1, 5};
+            u32 c;
 
-            priv = 0b01;
-
-            sepc = pc;
-
-            if (stvec.MODE() == 0b01 && intr) {
-                pc = (stvec.BASE() + cause) * 4;
-            } else {
-                pc = stvec.BASE() * 4;
+            for (int i = 0; i < 6; i++) {
+                if (get_bit(mp | sp, order[i])) {
+                    c = order[i];
+                    break;
+                }
             }
 
+            c = set_bit(c, 31);
+
+            throw trap{static_cast<trap_cause_t>(c), 0};
+        }
+    }
+}
+
+void hart::execute()
+{
+    fetch();
+
+    opcode = get_part(inst,  6,  0);
+    rs1    = get_part(inst, 19, 15);
+    rs2    = get_part(inst, 24, 20);
+    rd     = get_part(inst, 11,  7);
+    funct3 = get_part(inst, 14, 12);
+    funct7 = get_part(inst, 31, 25);
+
+    // clang-format off
+    switch (opcode) {
+        case OP_LUI:      decode_lui();      break;
+        case OP_AUIPC:    decode_auipc();    break;
+        case OP_JAL:      decode_jal();      break;
+        case OP_JALR:     decode_jalr();     break;
+        case OP_BRANCH:   decode_branch();   break;
+        case OP_LOAD:     decode_load();     break;
+        case OP_STORE:    decode_store();    break;
+        case OP_IMM:      decode_imm();      break;
+        case OP_OP:       decode_op();       break;
+        case OP_MISC_MEM: decode_misc_mem(); break;
+        case OP_SYSTEM:   decode_system();   break;
+        case OP_AMO:      decode_amo();      break;
+        default:
+            throw trap{trap_cause_t::illegal_instruction_exception, inst};
+            break;
+    }
+    // clang-format on
+}
+
+void hart::take_trap(const trap& t)
+{
+
+    u32 cause;
+    bool intr;
+
+    cause = static_cast<u32>(t.cause);
+    intr = get_bit(cause, 31);
+    cause = get_part(cause, 4, 0);
+
+    bool delegate = false;
+
+    if (priv != 0b11) {
+        if (intr) {
+            if (get_bit(mideleg, cause)) {
+                delegate = true;
+            }
         } else {
-            mcause = static_cast<u32>(t.cause);
-            mtval = t.value;
-
-            mstatus.MPIE() = mstatus.MIE();
-            mstatus.MIE() = 0b0;
-            mstatus.MPP() = priv;
-
-            priv = 0b11;
-
-            mepc = pc;
-
-            if (mtvec.MODE() == 0b01 && intr) {
-                pc = (mtvec.BASE() + cause) * 4;
-            } else {
-                pc = mtvec.BASE() * 4;
+            if (get_bit(medeleg, cause)) {
+                delegate = true;
             }
         }
-
-        fast_check_context();
-
     }
 
-    regs[0] = 0;
+    if (delegate) {
+        scause = static_cast<u32>(t.cause);
+        stval = t.value;
+
+        mstatus.SPIE() = mstatus.SIE();
+        mstatus.SIE() = 0b0;
+        mstatus.SPP() = priv;
+
+        priv = 0b01;
+
+        sepc = pc;
+
+        if (stvec.MODE() == 0b01 && intr) {
+            pc = (stvec.BASE() + cause) * 4;
+        } else {
+            pc = stvec.BASE() * 4;
+        }
+
+    } else {
+        mcause = static_cast<u32>(t.cause);
+        mtval = t.value;
+
+        mstatus.MPIE() = mstatus.MIE();
+        mstatus.MIE() = 0b0;
+        mstatus.MPP() = priv;
+
+        priv = 0b11;
+
+        mepc = pc;
+
+        if (mtvec.MODE() == 0b01 && intr) {
+            pc = (mtvec.BASE() + cause) * 4;
+        } else {
+            pc = mtvec.BASE() * 4;
+        }
+    }
+
+    fast_check_context();
+    irq_dirty = true; // priv and MIE/SIE changed
+}
+
+// runs up to n steps (a step that traps counts too) or until WFI parks the hart. The try block is
+// outside the inner loop, so it is set up once per trap instead of once per instruction
+u32 hart::run(u32 n)
+{
+    u32 i = 0;
+    irq_dirty = true; // devices ticked between batches, check once even if nothing marked it
+    while (i < n && !waiting) {
+        try {
+            for (; i < n && !waiting; i++) {
+                if (irq_dirty) [[unlikely]] {
+                    irq_dirty = false;
+                    check_interrupts();
+                }
+                execute();
+                regs[0] = 0;
+            }
+        } catch (const trap& t) {
+            take_trap(t);
+            regs[0] = 0;
+            i++;
+        }
+    }
+    return i;
+}
+
+void hart::step()
+{
+    run(1);
 }
 
 void hart::set_meip(bool level)
 {
     mip.MEIP() = level;
+    irq_dirty = true;
 }
 
 void hart::set_seip(bool level)
 {
     seip = level;
+    irq_dirty = true;
 }
 
 void hart::set_mtip(bool level)
 {
     mip.MTIP() = level;
+    irq_dirty = true;
 }
 
 void hart::set_stip(bool level)
 {
     mip.STIP() = level;
+    irq_dirty = true;
 }
 
 void hart::set_msip(bool level)
 {
     mip.MSIP() = level;
+    irq_dirty = true;
 }
 
 void hart::set_ssip(bool level)
 {
     mip.SSIP() = level;
+    irq_dirty = true;
 }
 
 hart::trap_cause_t hart::access_type_to_access_fault_exception(access_type_t access_type)

@@ -117,13 +117,8 @@ This run also showed the bad data-table case: 12M fast-D fills, against about 2.
    baseline, which is within noise. The ~6% on `hart.h:289` is the `case 4: memcpy` line itself,
    so those samples were most likely the guest memory read, not a branch on `len`. LTO
    apparently already folds the constant size.
-2. **Run instructions in batches inside the hart**: `hart::run(n)` loops internally, with the
-   `try`/`catch` outside the inner loop (catch, take the trap, keep looping). The main loop calls
-   `run(1000)`. Removes most of the ~10% call/loop overhead.
-3. **Check interrupts only when something changes**: an `irq_dirty` flag set by `set_*ip`, writes
-   to `mie`/`mip`/`mstatus`/`mideleg`, and `mret`/`sret`/trap entry. `step()` tests one bool.
-   Wins back most of the ~13%. For multicore it becomes the atomic flag from
-   [multicore.md](multicore.md).
+2. ~~**Run instructions in batches inside the hart**~~. Done, +10.8%, see below.
+3. ~~**Check interrupts only when something changes**~~. Done, +12.0%, see below.
 4. **Fix the fast-D conflict case**: a hashed index (`(vpn ^ vpn >> 8) & mask`) or 2 ways, so runs
    are consistent.
 5. **Decoded-instruction cache**, the largest change and the largest gain (targets the ~30% in
@@ -134,6 +129,32 @@ This run also showed the bad data-table case: 12M fast-D fills, against about 2.
    (boot-time alternatives, module loading), so this needs care.
 
 Suggested order: 1 → 2 → 3, measuring after each, then 4, then 5 as its own task.
+
+## Batched run(n) and the interrupt dirty flag (2026-11-06)
+
+- `hart::step()` is split into `check_interrupts()`, `execute()` and `take_trap()`.
+  `hart::run(n)` runs up to n steps with the `try` outside the inner loop. A caught trap is taken,
+  counted as a step (as before), and the loop goes on. It returns early when WFI parks the hart.
+  `main` calls `run(min(1000, max_instr - instret))`. `step()` is `run(1)`.
+- `irq_dirty`: the full interrupt check only runs when it is set. It is set by all `set_*ip`
+  (including device MMIO stores in the middle of a batch: CLINT `msip`/`mtimecmp`, PLIC
+  claim/complete), any CSR instruction (`csr_rw`, conservative), trap entry, `mret` and `sret`,
+  and once at the start of every `run()` batch as a safety net. Interrupts are still taken at the
+  exact instruction where they become deliverable. Checking only once per batch would also be
+  cheap, but it would take interrupts up to 1000 instructions late and miss short
+  `local_irq_enable(); local_irq_disable();` windows. For multicore, `irq_dirty` must become
+  atomic, because another hart's thread can raise this hart's `msip` (see [multicore.md](multicore.md)).
+
+5 alternating runs per pair, same session:
+
+| step | runs (MIPS) | median | gain |
+|---|---|---|---|
+| before (fetch-page cache) | 143.00 140.18 138.87 142.16 140.39 | 140.39 | |
+| + batched `run(n)` | 155.62 158.66 155.14 158.25 153.67 | 155.62 | +10.8% |
+| batched (second session, A/B with the next row) | 158.48 154.54 158.71 153.82 155.75 | 155.75 | |
+| **+ `irq_dirty`** | 174.46 173.24 170.16 174.50 177.21 | **174.46** | +12.0% |
+
+Total +24%. All runs were clean, and the M-mode image runs at 160.16 MIPS.
 
 ## How to run
 

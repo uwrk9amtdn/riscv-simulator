@@ -297,11 +297,11 @@ int main(int argc, char** argv)
                 uart0.poll_input();
             }
         } else {
-            int i;
-            for (i = 0; i < instr_per_tick && !hart_0.waiting; i++) {
-                hart_0.step();
+            u64 n = instr_per_tick;
+            if (sim.max_instr != 0 && sim.max_instr - instret < n) {
+                n = sim.max_instr - instret;
             }
-            instret += i;
+            instret += hart_0.run(n);
         }
 
         mmap.tick();

@@ -98,6 +98,7 @@ void hart::inst_mret() {
     mstatus.MPP() = 0b00;
 
     fast_check_context();
+    irq_dirty = true;
 
     pc = mepc;
 }
@@ -116,6 +117,7 @@ void hart::inst_sret() {
     mstatus.SPP() = 0b0;
 
     fast_check_context();
+    irq_dirty = true;
 
     pc = sepc;
 }
@@ -194,6 +196,7 @@ void hart::inst_csrrci() {
 
 void hart::csr_rw(u32 csr, u32 rm, u32 wm, u32& rd, u32 wd)
 {
+    irq_dirty = true; // mstatus, mie, mip, mideleg and their s-mode views can change interrupt delivery
 
     u32 lowest_priv = get_part(csr, 9, 8);
     u32 access_type = get_part(csr, 11, 10);

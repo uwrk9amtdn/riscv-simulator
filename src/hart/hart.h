@@ -31,6 +31,7 @@ public:
     void set_ssip(bool level);
 
     void step();
+    u32 run(u32 n); // returns the number of steps done, stops early when WFI parks the hart
 
     // kind: off (no lookup at all), null, dm, sa, fa
     void set_tlb(const std::string& kind, u32 entries, u32 ways);
@@ -193,6 +194,10 @@ private:
         u32 value;
     };
 
+    void check_interrupts(); // throws the highest priority pending and enabled interrupt
+    void execute();          // fetch, decode and execute one instruction
+    void take_trap(const trap& t);
+
     trap_cause_t access_type_to_access_fault_exception(access_type_t access_type);
     trap_cause_t access_type_to_page_fault_exception(access_type_t access_type);
 
@@ -277,6 +282,10 @@ private:
     }
 
     bool seip = false;
+
+    // set by everything that can change which interrupt is pending and enabled (set_*ip, CSR access,
+    // trap entry, mret/sret). run() only does the full interrupt check when it is set
+    bool irq_dirty = true;
 
     u32 ram_base = 0;
     u32 ram_size = 0;

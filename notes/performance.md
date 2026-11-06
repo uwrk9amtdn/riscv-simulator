@@ -2,21 +2,106 @@
 
 Plan, review findings and recommendations: [tlb-plan.md](tlb-plan.md).
 
-## Status
+## Status and next steps (2026-11-06)
 
-- Done: the concrete TLBs in `src/hart/tlb.h` (`NullTLB`, `DirectMappedTLB`, `SetAssocTLB`,
+All recommendations from [tlb-plan.md](tlb-plan.md) and from the profile below are done or were
+measured and dropped. Default build, same workload:
+
+| step | MIPS | gain |
+|---|---|---|
+| no TLB (`--tlb=off`) | 28.9 | |
+| original virtual SA 64×4 TLB | 44.4 | |
+| virtual DM 64 | 48.5 | |
+| RAM fast path | 63.6 | +31% |
+| devirtualized DM 64 (default build) | 73.3 | +15% |
+| host-pointer fast TLB | 135.4 | +85% |
+| fetch-page cache | 138.3 (A/B 129.95 → 138.34) | +6.5% |
+| batched `run(n)` | A/B 140.4 → 155.6 | +10.8% |
+| interrupt dirty flag | A/B 155.8 → 174.5 | +12.0% |
+| decoded-instruction cache (256K × 16 B) | A/B 172.8 → 196.0 | +13.5% |
+| helper cleanup (no change) | about 200 | |
+
+Tried and dropped (details in their sections): templated access size (no gain), 2-way fast-D
+(costs more than the rare conflicts), `get_part` rewrite and PGO (no gain or slower). The host
+speed varies between sessions, so only A/B numbers from the same session compare exactly.
+
+Next steps:
+
+1. ~~**Fresh profile**~~. Done, see "Profile after the decode cache" below. There's no single cheap
+   item left. The one medium step is passing operands to handlers directly (about 21% is spent
+   writing `rd`/`rs1`/`rs2`/`imm` into members and reading them back).
+2. **Bigger interpreter changes** (each a project of its own):
+   - Basic blocks / threaded code: run straight-line runs of decoded instructions without going
+     back through `execute()` per instruction. A block spans several words, so the raw-word compare
+     no longer works cheaply. This needs store-side invalidation of decoded pages (for example,
+     no fast-TLB write tag for pages with decoded code, so stores to them take the slow path).
+   - JIT to host code, as QEMU does. QEMU ran the same images and workload in 1.35 s of CPU time,
+     about 2.5× faster than now.
+3. **Multicore** ([multicore-plan.md](multicore-plan.md)). The plan predates the fast paths, so
+   these interactions are new:
+   - Fast TLB hits do plain `memcpy` into host RAM. Phase 4.1's rule (aligned RAM accesses through
+     `std::atomic_ref`, relaxed) has to cover the inline `load`/`store` hit paths and
+     `bus_load`/`bus_store`, not only a central RAM function.
+   - AMOs go through `load(..., w)` + `store` on the fast path today. In threaded mode they must
+     become one host atomic on the RAM pointer (phase 4.1 item 3).
+   - `irq_dirty` must be set by the atomic `irq_lines` updates from other threads (phase 1). That
+     means it becomes atomic as well, or `run()` also checks `irq_lines` once per batch, which
+     would delay remote interrupts by up to a batch.
+   - Fast TLB, fetch-page cache and decode cache are per hart and need no locks. Remote
+     `sfence.vma` arrives as an SBI IPI and runs on the target hart, which flushes its own tables.
+     The decode cache never needs remote invalidation, because entries are checked against the
+     fetched word.
+   - Memory: the decode cache is 4 MiB per hart. 128K entries (2 MiB) measured within noise and is
+     the fallback for many harts.
+
+## Profile after the decode cache (2026-11-06)
+
+`notes/prof_bench.py` on the default build with `-g` (180.75 MIPS under perf, 1.72M decodes, clean
+run). The handlers are separate functions now (`thunk<&hart::inst_x>`). The run loop with
+`execute()`, `fetch()` and the decode-cache lookup is inlined into `main`.
+
+By symbol: `main` 43.3%, `lw` 13.5%, `sw` 9.0%, `addi` 6.1%, `lbu` 3.9%, `add` 2.2%, `bne`/`beq`
+1.9% each, then a long tail of handlers. Slow paths are small: `load_slow` 1.6%,
+`fast_check_context` 0.5%, `sfence.vma` 0.5%, `sv32_ptw` 0.3%, device ticks and `clock_gettime`
+about 1%, exception unwinding 0.1%.
+
+By source line:
+
+| share | what | where |
+|---|---|---|
+| ~21% | operand setup in `execute()`: writing `rd`/`rs1`/`rs2`/`imm` into hart members (3.0-5.3% per line), which each handler reads back | `hart.cpp:80-83` |
+| ~9% | decode-cache index and lookup, plus the indirect call to the handler | `hart.cpp:75`, `:85` |
+| ~7% | fetch: page compare plus the instruction-word load | `hart.h:233-235` |
+| ~6% | run loop: counter, `waiting`, `irq_dirty` test, `regs[0] = 0` | `hart.cpp:212-218` |
+| ~3% per handler | handler entry (indirect call target) | the `thunk` line in `lw`, `sw`, ... |
+| ~3% | the guest memory access itself in `lw`/`sw` | `hart.h:298` |
+| <3% | all slow paths together | |
+
+perf attributes a stall to the instruction after it, so part of the `imm` line (5.3%) is probably the
+wait for the decode-cache entry (a 4 MiB table), not the store.
+
+What's left is the per-instruction machinery, spread over several places:
+
+- **Pass operands directly** (medium): handlers take the decoded entry (or `rd`/`rs1`/`rs2`/`imm` as
+  arguments) instead of reading hart members, so the 4 stores and reloads per instruction go away.
+  That touches every handler, mechanically, like the `imm` change for the decode cache. The entry
+  could keep its 16 bytes, because the register fields can be read from `raw` inside the handler.
+- **Block-level execution** (large, item 2 in "Status and next steps"): removes the per-instruction
+  loop, fetch and call overhead (~20% together) and makes operand passing natural.
+
+## Initial TLB work
+
+- The concrete TLBs in `src/hart/tlb.h` (`NullTLB`, `DirectMappedTLB`, `SetAssocTLB`,
   `FullyAssocTLB`). Integration fixes in `hart.cpp`/`op_system.cpp`: superpage PA, MPRV privilege
   in `sv32_perm_check`, the D bit (the hit path checked bit 2 = W instead of bit 7 = D), the G bit,
   superpages split into 4 KiB entries, insert replaces existing entries, and the sfence ASID mask.
-- Done: options `--tlb=off|null|dm|sa|fa --tlb-entries=N --tlb-ways=W --max-instr=N`. SIGUSR1 stops
-  the run and prints instructions, CPU time, MIPS and the I/D hit rates to stderr. The default is
-  now `dm`, 64 entries (see results).
-- Done: `-DTLB_STATIC=<FinalClass>` compile switch (devirtualized TLB).
-- Done: benchmark driver [bench_tlb.py](bench_tlb.py). It boots `images/s-mode` on a pty, types a
-  userspace workload, waits for the marker, then sends SIGUSR1.
-- Done: the full matrix (3 runs each), the devirtualized variants and the M-mode reference (2026-11-06).
-  The default is now `dm`, 64 entries (it was `sa` 64x4), and the default build is devirtualized
-  (`RVSIM_TLB_STATIC=DirectMappedTLB`).
+- Options `--tlb=off|null|dm|sa|fa --tlb-entries=N --tlb-ways=W --max-instr=N`. SIGUSR1 stops the
+  run and prints instructions, CPU time, MIPS, the I/D hit rates and the fast-TLB/decode counters to
+  stderr.
+- `-DRVSIM_TLB_STATIC=<FinalClass>` (default `DirectMappedTLB`, 64 entries) builds a devirtualized
+  TLB. An empty value gives runtime selection with `--tlb`.
+- Benchmark driver [bench_tlb.py](bench_tlb.py): boots `images/s-mode` on a pty, types a userspace
+  workload, waits for the marker, then sends SIGUSR1. `--check` runs a known-output workload.
 
 ## RAM fast path (2026-11-06)
 

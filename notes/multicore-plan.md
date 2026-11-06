@@ -9,6 +9,8 @@ Both modes share the same interrupt-line, WFI and device interfaces. The only di
 
 Before phase 4 (threads), do items 1 and 2 of `multicore.md` 3.5 (the RAM fast path and a correct TLB). Phases 1–3 don't depend on them.
 
+Items 1 and 2 are done, along with a fast TLB, a fetch-page cache, batched `run(n)`, an interrupt dirty flag and a decode cache. They change some of phase 1 and phase 4. See "Status and next steps" in [performance.md](performance.md).
+
 ---
 
 ## Design summary

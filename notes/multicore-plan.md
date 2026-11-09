@@ -322,13 +322,28 @@ loop + md5 of 8 MiB zeros + md5 of busybox) correct in both modes, 4.8 s with th
 harts: boot, 3 s idle (timer kicks and the armed deadline), 4 parallel jobs (loop + md5 of 1 MiB of zeros, all
 correct), 3 x `sleep 1`. No reports; TSan and its `log_path` were checked with a racy test program.
 
+**Long timer drift (done):** 300 x `sleep 1`, 4 harts: guest 303 s, host wall 303.1 s in both modes, no hang.
+Guest and host time agree; the 3 s over 300 is per-iteration overhead (fork of `sleep`), the same in both modes.
+
+**IPI-heavy workloads (done):** 4 harts, 3 runs per mode, one boot per mode and run, all results correct, no
+oops/stall. Guest IPIs from `/proc/interrupts` (remote TLB flushes go through SBI RFENCE, OpenSBI sends them as
+MSIP, so they don't show there):
+
+| workload | round-robin | `--threads` | threads vs RR | resched / func-call IPIs, RR vs threads |
+|---|---|---|---|---|
+| fork: 4 x (200 x `ls /`) in parallel | 4.82 s | 1.47 s | 3.3x | 265/225 vs 280/174 |
+| pipe: 2 x `dd bs=512 count=20000 \| cat \| cat \| md5sum` | 3.02 s | 0.86 s | 3.5x | 6/4736 vs 6/502 |
+| mixed: 4 x (loop + md5 of 8 MiB zeros + md5 of busybox) | 14.05 s | 4.79 s | 2.9x | 5/17 vs 4/428 |
+
+The IPI mix follows the guest's timing: in round-robin a woken reader's CPU is more often parked, so the
+pipe test queues ~9x more remote wakeups (function-call IPIs). Threads win by about the same factor as the
+CPU-bound scaling run (2.2x there at 4 harts, before the time CSR); IPI-heavy work doesn't hurt them.
+
 **Next steps (where to continue):**
 
-1. Repeat the IPI-heavy workloads (fork-heavy scripts, TLB shootdowns via SBI RFENCE) in both modes and
-   compare. The stress workload above covers part of this.
-2. Longer timer drift run (several minutes).
-3. Then: update `multicore.md` 3.5 and the README, and decide whether threads become the default (phase 5).
-4. Optional, both modes: interrupts and ecalls are still delivered as C++ exceptions (~4 per hart per guest
+1. Phase 5: update `multicore.md` 3.5 and the README, and decide whether threads become the default. All the
+   phase 4 checks pass; the remaining cost of threads is idle CPU (~2x round-robin at 4 harts, see above).
+2. Optional, both modes: interrupts and ecalls are still delivered as C++ exceptions (~4 per hart per guest
    tick); taking interrupts without a throw would cut idle CPU further.
 
 Test driver: `notes/smp_test.py` (`idle`, `sleep`, `run --cmd`; extra options go to rvsim).

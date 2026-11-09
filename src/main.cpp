@@ -9,6 +9,7 @@
 
 #include <stdio.h>
 #include <stdlib.h>
+#include <string.h>
 
 #include <atomic>
 #include <memory>
@@ -212,6 +213,38 @@ struct sim_options {
     const char* dump_dtb = nullptr; // write the final (patched) dtb here
 };
 
+static void print_usage(FILE* out, const char* prog)
+{
+    fprintf(out,
+        "usage: %s [options]\n"
+        "\n"
+        "images:\n"
+        "  --bios FILE          M-mode firmware (e.g. OpenSBI fw_jump.bin), loaded at 0x80000000\n"
+        "  --kernel FILE        kernel image, at 0x80400000 with --bios, else at 0x80000000 in M mode\n"
+        "  --initrd FILE        initramfs, at 0x86000000 (needs --kernel)\n"
+        "  --dtb FILE           device tree blob, at 0x87000000; initrd, bootargs and harts are patched in\n"
+        "  --append ARGS        kernel command line (bootargs)\n"
+        "  --dump-dtb FILE      write the patched device tree to FILE\n"
+        "\n"
+        "harts:\n"
+        "  --harts N            number of harts, 1..64 (default 1; N > 1 needs --bios)\n"
+        "  --threads            run each hart in its own host thread (default: round-robin in one thread)\n"
+        "  --quantum N          instructions per hart per round-robin turn / run slice (default 1000)\n"
+        "\n"
+        "tlb:\n"
+        "  --tlb KIND           off, null, dm, sa or fa (default dm)\n"
+        "  --tlb-entries N      number of TLB entries (default 64)\n"
+        "  --tlb-ways N         ways for --tlb sa (default 1)\n"
+        "\n"
+        "other:\n"
+        "  --max-instr N        stop after N instructions and print MIPS (default: run forever)\n"
+        "  --help               show this help\n"
+        "\n"
+        "example (4 harts, SMP Linux):\n"
+        "  %s --bios fw_jump.bin --kernel Image --initrd rootfs.cpio --dtb soc.dtb --harts 4 --threads\n",
+        prog, prog);
+}
+
 void parse_cmdline(int argc, char* const* argv, const char** bios, const char** kernel, const char** initrd, const char** dtb, const char** append, sim_options* sim)
 {
     static struct option long_options[] = {
@@ -228,6 +261,7 @@ void parse_cmdline(int argc, char* const* argv, const char** bios, const char** 
         {"dump-dtb", required_argument, 0, 10},
         {"quantum", required_argument, 0, 11},
         {"threads", no_argument, 0, 12},
+        {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
 
@@ -275,11 +309,30 @@ void parse_cmdline(int argc, char* const* argv, const char** bios, const char** 
         case 12:
             sim->threads = true;
             break;
-        case '?':
-            printf("unknown option: %s", argv[optind - 1]);
-        default:
-            printf("unknown option: %c", optopt);
+        case 'h':
+            print_usage(stdout, argv[0]);
+            exit(0);
+        default: // '?': getopt_long already printed what was wrong (unknown option or missing argument)
+            fprintf(stderr, "\n");
+            print_usage(stderr, argv[0]);
+            exit(1);
         }
+    }
+
+    if (optind < argc) {
+        fprintf(stderr, "%s: unexpected argument '%s'", argv[0], argv[optind]);
+        // getopt_long moves non-options to the end, so look for --threads anywhere: "--threads 4" is a likely mistake
+        bool numeric = strspn(argv[optind], "0123456789") == strlen(argv[optind]);
+        bool has_threads = false;
+        for (int i = 1; i < optind; i++) {
+            has_threads |= strcmp(argv[i], "--threads") == 0;
+        }
+        if (numeric && has_threads) {
+            fprintf(stderr, " (--threads takes no value; use --harts N to set the hart count)");
+        }
+        fprintf(stderr, "\n\n");
+        print_usage(stderr, argv[0]);
+        exit(1);
     }
 }
 

@@ -180,7 +180,7 @@ bool clint::store(u32 addr, u32 len, const u8* data)
             }
         }
 
-        mtime_offset += mtime - cur;
+        mtime_offset.fetch_add(mtime - cur, std::memory_order_relaxed);
         notify_host_changed();
 
         for (u32 i = 0; i < harts.size(); i++) {
@@ -204,13 +204,13 @@ u64 clint::size() const
 
 u64 clint::mtime_now() const
 {
-    return (host_now_ns() - time0_ns) / NS_PER_MTIME + mtime_offset;
+    return (host_now_ns() - time0_ns) / NS_PER_MTIME + mtime_offset.load(std::memory_order_relaxed);
 }
 
 u64 clint::next_deadline_ns()
 {
     u64 now_ns = host_now_ns();
-    u64 mtime = (now_ns - time0_ns) / NS_PER_MTIME + mtime_offset;
+    u64 mtime = (now_ns - time0_ns) / NS_PER_MTIME + mtime_offset.load(std::memory_order_relaxed);
     u64 deadline = NO_DEADLINE;
 
     for (u32 i = 0; i < harts.size(); i++) {

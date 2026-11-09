@@ -3,6 +3,7 @@
 #include "common.h"
 #include "mmio_device.h"
 #include "hart.h"
+#include <atomic>
 #include <vector>
 
 class clint : public mmio_device {
@@ -16,14 +17,15 @@ public:
     u64 next_deadline_ns() override;
     ~clint() override;
 
+    // current mtime. Also called by harts for the time CSR, without the device lock
+    u64 mtime_now() const;
+
 private:
     std::vector<u32> msip;
     std::vector<u64> mtimecmp;
 
     u64 time0_ns;         // host time at power on
-    u64 mtime_offset = 0; // guest writes to mtime are kept as an offset from the host clock
-
-    u64 mtime_now() const;
+    std::atomic<u64> mtime_offset{0}; // guest writes to mtime are kept as an offset from the host clock
 
     std::vector<hart*> harts;
 };

@@ -257,6 +257,9 @@ void hart::csr_rw(u32 csr, u32 rm, u32 wm, u32& rd, u32 wd)
         case CSR_SATP:       return csr_rw_satp       (rm, wm, rd, wd);
         case CSR_SCOUNTEREN: return csr_rw_scounteren (rm, wm, rd, wd);
 
+        case CSR_TIME:       return csr_rw_time       (rm, rd, false);
+        case CSR_TIMEH:      return csr_rw_time       (rm, rd, true);
+
         default: throw trap{trap_cause_t::illegal_instruction_exception, inst};
     };
 }

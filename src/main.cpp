@@ -384,6 +384,9 @@ int main(int argc, char** argv)
     plic plic0(plic_contexts, 1);
 
     clint clint0(harts);
+    for (hart* h : harts) {
+        h->set_time_source(&clint0);
+    }
 
     uart uart0(0, &plic0, 1);
 

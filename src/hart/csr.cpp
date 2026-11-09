@@ -1,5 +1,6 @@
 #include "common.h"
 #include <hart.h>
+#include "clint.h"
 
 void hart::csr_rw_misa (u32 rm, u32 wm, u32& rd, u32 wd) {
     rd = misa & rm;
@@ -98,10 +99,20 @@ void hart::csr_rw_mideleg (u32 rm, u32 wm, u32& rd, u32 wd) {
 }
 
 void hart::csr_rw_mcounteren (u32 rm, u32 wm, u32& rd, u32 wd) {
-    // counters are not implemented, reads of time always trap to m mode.
-    // TM is writable so that the sbi firmware knows it is allowed to emulate time for s mode
+    // only time is implemented (cycle and instret are not): TM is the only writable bit
     rd = mcounteren & rm;
     mcounteren = set_with_mask(mcounteren, wd, wm & 0x2); // TM
+}
+
+// time / timeh: read-only (writes trap in csr_rw), the CLINT's mtime. Below M mode they need mcounteren.TM, and in U
+// mode also scounteren.TM; otherwise they trap, and OpenSBI emulates them when it left TM clear. Linux reads time on
+// every clocksource read, so this saves a trap and an MMIO round trip through the firmware for each
+void hart::csr_rw_time (u32 rm, u32& rd, bool high) {
+    if (!time_source || (priv != 0b11 && !(mcounteren & 0x2)) || (priv == 0b00 && !(scounteren & 0x2))) {
+        throw trap{trap_cause_t::illegal_instruction_exception, inst};
+    }
+    u64 t = time_source->mtime_now();
+    rd = (high ? (u32)(t >> 32) : (u32)t) & rm;
 }
 
 void hart::csr_rw_sstatus (u32 rm, u32 wm, u32& rd, u32 wd) {

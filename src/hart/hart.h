@@ -18,6 +18,8 @@ using hart_tlb_t = TLB_STATIC;
 using hart_tlb_t = TLB;
 #endif
 
+class clint;
+
 class hart {
 
 public:
@@ -43,6 +45,8 @@ public:
     // RAM fast path: physical accesses inside [base, base + size) go straight to host memory instead of
     // through the mmio tree. The region must not be shared with any other device
     void set_ram(u32 base, u32 size, u8* host) { ram_base = base; ram_size = size; ram_host = host; }
+    // the time / timeh CSRs read this CLINT's mtime. Without one they trap and the firmware emulates them
+    void set_time_source(const clint* c) { time_source = c; }
 
     struct fast_tlb_stats_t { u64 ifills = 0, dfills = 0, flushes = 0; };
     const fast_tlb_stats_t& get_fast_tlb_stats() const { return fast_stats; }
@@ -302,6 +306,7 @@ private:
     // external interrupt lines, driven by devices: MEIP and SEIP (PLIC), MTIP and MSIP (CLINT). Atomic, so
     // with threaded harts another thread can raise them. mip only keeps the bits the hart writes itself
     // (SSIP, STIP, software SEIP), so MEIP/MTIP/MSIP are never set in mip
+    const clint* time_source = nullptr;
     std::atomic<u32> irq_lines{0};
 
     void set_line(u32 bit, bool level);
@@ -455,6 +460,7 @@ private:
     void csr_rw_stval         (u32 rm, u32 wm, u32& rd, u32 wd);
     void csr_rw_satp          (u32 rm, u32 wm, u32& rd, u32 wd);
     void csr_rw_scounteren    (u32 rm, u32 wm, u32& rd, u32 wd);
+    void csr_rw_time          (u32 rm, u32& rd, bool high);
 
 private:
     void inst_lui       ();

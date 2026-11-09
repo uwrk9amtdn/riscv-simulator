@@ -59,6 +59,9 @@ constexpr u32 CSR_SIP        = 0x144;
 constexpr u32 CSR_SATP       = 0x180;
 constexpr u32 CSR_SCOUNTEREN = 0x106;
 
+constexpr u32 CSR_TIME       = 0xc01;
+constexpr u32 CSR_TIMEH      = 0xc81;
+
 // branch
 constexpr u32 FUNCT3_BEQ  = 0b000;
 constexpr u32 FUNCT3_BNE  = 0b001;

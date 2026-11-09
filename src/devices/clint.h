@@ -15,7 +15,12 @@ public:
     u64 size() const override;
     void tick() override;
     u64 next_deadline_ns() override;
+    std::string fdt_node_name(u32 base) const override;
+    void fdt_props(fdt_builder& b, u32 base) const override;
     ~clint() override;
+
+    // mtime frequency, also timebase-frequency in the device tree
+    static constexpr u32 TIMEBASE_HZ = 10000000;
 
     // current mtime. Also called by harts for the time CSR, without the device lock
     u64 mtime_now() const;

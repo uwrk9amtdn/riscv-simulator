@@ -6,11 +6,13 @@
 #include "ram.h"
 #include "uart.h"
 #include "host_io.h"
+#include "devicetree.h"
 
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 
+#include <algorithm>
 #include <atomic>
 #include <memory>
 #include <thread>
@@ -21,7 +23,6 @@
 #include <csignal>
 
 #include <getopt.h>
-#include <libfdt.h>
 
 // TODO: disable ctrl+c
 
@@ -32,7 +33,7 @@ std::vector<u8> load_file(std::string file)
 
     FILE* fp = fopen(file.c_str(), "r");
     if (!fp) {
-        runtime_error("file does not exist");
+        runtime_error("can't open " + file);
     }
 
     fseek(fp, 0, SEEK_END);
@@ -42,159 +43,6 @@ std::vector<u8> load_file(std::string file)
     r.resize(size);
     fread(&r[0], 1, size, fp);
     return r;
-}
-
-static void fdt_check(int err, const char* what)
-{
-    if (err < 0) {
-        runtime_error(std::string(what) + ": " + fdt_strerror(err));
-    }
-}
-
-struct fdt_prop {
-    std::string name;
-    std::vector<u8> value;
-};
-
-static std::vector<fdt_prop> fdt_read_props(const void* fdt, int node)
-{
-    std::vector<fdt_prop> props;
-    int offset;
-    fdt_for_each_property_offset(offset, fdt, node) {
-        const char* name;
-        int len;
-        const u8* value = (const u8*)fdt_getprop_by_offset(fdt, offset, &name, &len);
-        props.push_back({name, std::vector<u8>(value, value + len)});
-    }
-    return props;
-}
-
-// /cpus gets cpu@0 .. cpu@N-1, copied from cpu@0 (the template in soc.dts), each with its own interrupt
-// controller phandle. The CLINT (MSIP, MTIP) and the PLIC (MEIP, SEIP) get one interrupts-extended pair
-// per hart, in hart order, which is also the order of the PLIC contexts (m0, s0, m1, s1, ...)
-static void fdt_set_harts(void* fdt, u32 nharts)
-{
-    int cpus = fdt_path_offset(fdt, "/cpus");
-    fdt_check(cpus, "/cpus not found");
-    int cpu0 = fdt_subnode_offset(fdt, cpus, "cpu@0");
-    fdt_check(cpu0, "/cpus/cpu@0 not found");
-    int intc0 = fdt_subnode_offset(fdt, cpu0, "interrupt-controller");
-    fdt_check(intc0, "/cpus/cpu@0/interrupt-controller not found");
-
-    std::vector<fdt_prop> cpu_props = fdt_read_props(fdt, cpu0);
-    std::vector<fdt_prop> intc_props = fdt_read_props(fdt, intc0);
-
-    std::vector<u32> phandles(nharts);
-    phandles[0] = fdt_get_phandle(fdt, intc0);
-    if (phandles[0] == 0) {
-        runtime_error("cpu@0 interrupt-controller has no phandle");
-    }
-    u32 max_phandle;
-    fdt_check(fdt_find_max_phandle(fdt, &max_phandle), "fdt_find_max_phandle");
-    for (u32 i = 1; i < nharts; i++) {
-        phandles[i] = max_phandle + i;
-    }
-
-    fdt_check(fdt_del_node(fdt, cpu0), "fdt_del_node cpu@0");
-
-    // fdt_add_subnode puts a new node before the existing children, so add them in reverse to get cpu@0 first
-    for (int i = nharts - 1; i >= 0; i--) {
-        cpus = fdt_path_offset(fdt, "/cpus");
-        std::string name = "cpu@" + std::to_string(i);
-        int cpu = fdt_add_subnode(fdt, cpus, name.c_str());
-        fdt_check(cpu, "fdt_add_subnode cpu");
-        for (auto& p : cpu_props) {
-            if (p.name == "reg") {
-                fdt_check(fdt_setprop_u32(fdt, cpu, "reg", i), "fdt_setprop reg");
-            } else if (p.name != "phandle" && p.name != "linux,phandle") {
-                fdt_check(fdt_setprop(fdt, cpu, p.name.c_str(), p.value.data(), p.value.size()), "fdt_setprop cpu");
-            }
-        }
-        int intc = fdt_add_subnode(fdt, cpu, "interrupt-controller");
-        fdt_check(intc, "fdt_add_subnode interrupt-controller");
-        for (auto& p : intc_props) {
-            if (p.name == "phandle" || p.name == "linux,phandle") {
-                fdt_check(fdt_setprop_u32(fdt, intc, p.name.c_str(), phandles[i]), "fdt_setprop phandle");
-            } else {
-                fdt_check(fdt_setprop(fdt, intc, p.name.c_str(), p.value.data(), p.value.size()), "fdt_setprop intc");
-            }
-        }
-    }
-
-    auto set_interrupts = [&](const char* compatible, std::initializer_list<u32> irqs) {
-        int node = fdt_node_offset_by_compatible(fdt, -1, compatible);
-        fdt_check(node, compatible);
-        std::vector<fdt32_t> cells;
-        for (u32 i = 0; i < nharts; i++) {
-            for (u32 irq : irqs) {
-                cells.push_back(cpu_to_fdt32(phandles[i]));
-                cells.push_back(cpu_to_fdt32(irq));
-            }
-        }
-        fdt_check(fdt_setprop(fdt, node, "interrupts-extended", cells.data(), cells.size() * sizeof(fdt32_t)),
-                  "fdt_setprop interrupts-extended");
-    };
-    set_interrupts("riscv,clint0", {3, 7});  // MSIP, MTIP
-    set_interrupts("riscv,plic0", {11, 9});  // MEIP, SEIP
-}
-
-void patch_fdt(std::vector<u8>& fdt, u32 initrd_start, u32 initrd_end, std::string bootargs, u32 nharts)
-{
-    fdt.resize(fdt.size() + 4096 + 1024 * nharts);
-    u8* fdt_data;
-    fdt_data = &fdt[0];
-    int err;
-    int chosen;
-
-    err = fdt_open_into(fdt_data, fdt_data, fdt.size());
-    if (err) {
-        runtime_error(std::string("fdt_open_into failed: ") + fdt_strerror(err));
-    }
-
-    chosen = fdt_path_offset(fdt_data, "/chosen");
-    if (chosen < 0) {
-        chosen = fdt_add_subnode(fdt_data, 0, "chosen");
-        if (chosen < 0) {
-            runtime_error(std::string("Failed to create /chosen: ") + fdt_strerror(chosen));
-        }
-    }
-
-    const char* existing = (const char*)fdt_getprop(fdt_data, chosen, "bootargs", nullptr);
-    std::string final_bootargs;
-
-    if (existing && *existing) {
-        final_bootargs = std::string(existing) + " " + bootargs;
-    } else {
-        final_bootargs = bootargs;
-    }
-
-    err = fdt_setprop_string(fdt_data, chosen, "bootargs", final_bootargs.c_str());
-    if (err) {
-        runtime_error(std::string("fdt_setprop_string failed: ") + fdt_strerror(err));
-    }
-
-    if (initrd_start != 0) {
-        err = fdt_setprop_u32(fdt_data, chosen, "linux,initrd-start", initrd_start);
-        if (err) {
-            runtime_error(std::string("fdt_setprop_u32 failed: ") + fdt_strerror(err));
-        }
-
-        err = fdt_setprop_u32(fdt_data, chosen, "linux,initrd-end", initrd_end);
-        if (err) {
-            runtime_error(std::string("fdt_setprop_u32 failed: ") + fdt_strerror(err));
-        }
-    }
-
-    if (nharts > 1) {
-        fdt_set_harts(fdt_data, nharts);
-    }
-
-    err = fdt_pack(fdt_data);
-    if (err) {
-        runtime_error(std::string("fdt_pack failed: ") + fdt_strerror(err));
-    }
-
-    fdt.resize(fdt_totalsize(fdt_data));
 }
 
 // SIGUSR1 stops the run and prints the statistics (used by benchmark drivers)
@@ -210,21 +58,54 @@ struct sim_options {
     u32 harts = 1;
     u32 quantum = 1000; // instructions a hart runs before the devices tick and the next hart runs
     bool threads = true; // one host thread per hart plus the I/O thread; false: all harts round-robin in one thread
-    const char* dump_dtb = nullptr; // write the final (patched) dtb here
+    u64 mem = 128 << 20; // RAM size, -m
+    const char* dump_dtb = nullptr; // write the generated device tree here (blob)
+    const char* dump_dts = nullptr; // ... and as dts source
 };
+
+// -m: a size in bytes with a K, M or G suffix; a plain number is MiB (as in QEMU). 0 if it doesn't parse
+static u64 parse_size(const char* s)
+{
+    char* end;
+    u64 n = strtoull(s, &end, 10);
+    u64 unit = 1 << 20;
+    if (*end) {
+        switch (*end) {
+        case 'k': case 'K': unit = 1 << 10; break;
+        case 'm': case 'M': unit = 1 << 20; break;
+        case 'g': case 'G': unit = 1 << 30; break;
+        default: return 0;
+        }
+        if (end[1] && strcmp(end + 1, "iB") != 0 && strcmp(end + 1, "B") != 0) {
+            return 0;
+        }
+    }
+    if (end == s || n > ((u64)1 << 40) / unit) {
+        return 0;
+    }
+    return n * unit;
+}
 
 static void print_usage(FILE* out, const char* prog)
 {
     fprintf(out,
         "usage: %s [options]\n"
         "\n"
+        "machine:\n"
+        "  -m SIZE              RAM size at 0x80000000, e.g. 256M or 1G; a plain number is MiB (default 128M,\n"
+        "                       16M..2G). OpenSBI fw_jump needs at least 36M (it copies the device tree 34 MiB\n"
+        "                       into RAM); a 32-bit Linux uses at most ~1G\n"
+        "\n"
         "images:\n"
-        "  --bios FILE          M-mode firmware (e.g. OpenSBI fw_jump.bin), loaded at 0x80000000\n"
-        "  --kernel FILE        kernel image, at 0x80400000 with --bios, else at 0x80000000 in M mode\n"
-        "  --initrd FILE        initramfs, at 0x86000000 (needs --kernel)\n"
-        "  --dtb FILE           device tree blob, at 0x87000000; initrd, bootargs and harts are patched in\n"
-        "  --append ARGS        kernel command line (bootargs)\n"
-        "  --dump-dtb FILE      write the patched device tree to FILE\n"
+        "  --bios FILE          M-mode firmware (e.g. OpenSBI fw_jump.bin), loaded at the start of RAM\n"
+        "  --kernel FILE        kernel image, 4 MiB into RAM with --bios, else at the start of RAM in M mode\n"
+        "  --initrd FILE        initramfs, placed below the device tree (needs --kernel)\n"
+        "  --append ARGS        added to the kernel command line (console=ttyS0 earlycon)\n"
+        "\n"
+        "device tree (generated from the machine; a1 points to it at reset):\n"
+        "  --dump-dtb FILE      write it to FILE as a blob\n"
+        "  --dump-dts FILE      write it to FILE as dts source\n"
+        "                       without --bios and --kernel, rvsim exits after writing them\n"
         "\n"
         "harts:\n"
         "  --harts N            number of harts, 1..64 (default 1; N > 1 needs --bios)\n"
@@ -243,16 +124,15 @@ static void print_usage(FILE* out, const char* prog)
         "  --help               show this help\n"
         "\n"
         "example (4 harts, SMP Linux):\n"
-        "  %s --bios fw_jump.bin --kernel Image --initrd rootfs.cpio --dtb soc.dtb --harts 4\n",
+        "  %s --bios fw_jump.bin --kernel Image --initrd rootfs.cpio --harts 4\n",
         prog, prog);
 }
 
-void parse_cmdline(int argc, char* const* argv, const char** bios, const char** kernel, const char** initrd, const char** dtb, const char** append, sim_options* sim)
+void parse_cmdline(int argc, char* const* argv, const char** bios, const char** kernel, const char** initrd, const char** append, sim_options* sim)
 {
     static struct option long_options[] = {
         {"kernel", required_argument, 0, 0},
         {"initrd", required_argument, 0, 1},
-        {"dtb", required_argument, 0, 2},
         {"append", required_argument, 0, 3},
         {"bios", required_argument, 0, 4},
         {"tlb", required_argument, 0, 5},         // off, null, dm, sa, fa
@@ -264,6 +144,7 @@ void parse_cmdline(int argc, char* const* argv, const char** bios, const char** 
         {"quantum", required_argument, 0, 11},
         {"threads", no_argument, 0, 12},
         {"round-robin", no_argument, 0, 13},
+        {"dump-dts", required_argument, 0, 14},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -271,7 +152,7 @@ void parse_cmdline(int argc, char* const* argv, const char** bios, const char** 
     int opt;
     int opt_index;
 
-    while ((opt = getopt_long(argc, argv, "", long_options, &opt_index)) != -1) {
+    while ((opt = getopt_long(argc, argv, "m:", long_options, &opt_index)) != -1) {
         switch (opt) {
         case 0:
             *kernel = optarg;
@@ -279,8 +160,13 @@ void parse_cmdline(int argc, char* const* argv, const char** bios, const char** 
         case 1:
             *initrd = optarg;
             break;
-        case 2:
-            *dtb = optarg;
+        case 'm':
+            sim->mem = parse_size(optarg);
+            if (sim->mem == 0) {
+                fprintf(stderr, "%s: -m: can't read the size '%s' (e.g. 256M, 1G)\n\n", argv[0], optarg);
+                print_usage(stderr, argv[0]);
+                exit(1);
+            }
             break;
         case 3:
             *append = optarg;
@@ -315,6 +201,9 @@ void parse_cmdline(int argc, char* const* argv, const char** bios, const char** 
         case 13:
             sim->threads = false;
             break;
+        case 14:
+            sim->dump_dts = optarg;
+            break;
         case 'h':
             print_usage(stdout, argv[0]);
             exit(0);
@@ -342,30 +231,42 @@ void parse_cmdline(int argc, char* const* argv, const char** bios, const char** 
     }
 }
 
-int main(int argc, char** argv)
+static int run(int argc, char** argv)
 {
     const char* bios = 0;
     const char* kernel = 0;
     const char* initrd = 0;
-    const char* dtb = 0;
     const char* append = 0;
 
     sim_options sim;
 
-    parse_cmdline(argc, argv, &bios, &kernel, &initrd, &dtb, &append, &sim);
+    parse_cmdline(argc, argv, &bios, &kernel, &initrd, &append, &sim);
 
     if (sim.quantum < 1) {
         runtime_error("--quantum must be at least 1");
     }
     u32 instr_per_tick = sim.quantum;
 
-    mmio mmap(28, 4);
-    mmio prpl(24, 4);
+    // the memory map. RAM size from -m; it has to stay below the top of the 32-bit address space
+    constexpr u32 RAM_BASE = 0x80000000;
+    constexpr u32 UART_BASE = 0x01000000;
+    constexpr u32 CLINT_BASE = 0x02000000;
+    constexpr u32 PLIC_BASE = 0x03000000;
+
+    if (sim.mem < (16 << 20) || sim.mem > ((u64)1 << 31) || sim.mem % 4096) {
+        runtime_error("-m: RAM size must be 16M..2G, a multiple of 4K");
+    }
+
+    mmio bus;
 
     if (sim.harts < 1 || sim.harts > 64) {
         runtime_error("--harts must be 1..64");
     }
-    if (sim.harts > 1 && !bios) {
+    if (bios && sim.mem < (36 << 20)) {
+        fprintf(stderr, "warning: -m below 36M: OpenSBI fw_jump copies the device tree to 34 MiB into RAM (its default "
+                "FW_JUMP_FDT_OFFSET) and hangs without output if that is outside RAM\n");
+    }
+    if (sim.harts > 1 && !bios && kernel) {
         runtime_error("--harts > 1 needs --bios: OpenSBI parks the other harts and starts them for the kernel");
     }
 
@@ -375,7 +276,7 @@ int main(int argc, char** argv)
     std::vector<hart_context*> plic_contexts; // m0, s0, m1, s1, ...: the order of interrupts-extended in the dtb
 
     for (u32 i = 0; i < sim.harts; i++) {
-        hart_list.push_back(std::make_unique<hart>(&mmap, i, 0x80000000));
+        hart_list.push_back(std::make_unique<hart>(&bus, i, RAM_BASE));
         harts.push_back(hart_list.back().get());
         harts.back()->set_tlb(sim.tlb_kind, sim.tlb_entries, sim.tlb_ways);
 
@@ -385,7 +286,7 @@ int main(int argc, char** argv)
         plic_contexts.push_back(contexts.back().get());
     }
 
-    ram ram0(128 * 1024 * 1024);
+    ram ram0(sim.mem);
 
     plic plic0(plic_contexts, 1);
 
@@ -396,84 +297,108 @@ int main(int argc, char** argv)
 
     uart uart0(0, &plic0, 1);
 
-    // TODO: add devices to memory map using base addresses. Create mmio tree automatically based on the addresses
-    // TODO: generate dtb automatically from mmio
-
-    mmap.add_device(&ram0, 8);  // 0x8000_0000
+    bus.add_device(&ram0, RAM_BASE);
+    bus.add_device(&uart0, UART_BASE);
+    bus.add_device(&clint0, CLINT_BASE);
+    bus.add_device(&plic0, PLIC_BASE);
     for (hart* h : harts) {
-        h->set_ram(0x80000000, ram0.size(), ram0.host_ptr());
+        h->set_ram(RAM_BASE, ram0.size(), ram0.host_ptr());
     }
-    mmap.add_device(&prpl, 0);
 
-    prpl.add_device(&uart0, 1);  // 0x0100_0000
-    prpl.add_device(&clint0, 2); // 0x0200_0000
-    prpl.add_device(&plic0, 3);  // 0x0300_0000
+    // where the images go. The firmware at the start of RAM, the kernel 4 MiB above it (OpenSBI fw_jump's
+    // FW_JUMP_ADDR) or at the start without firmware. The device tree and the initrd sit at the top of the first
+    // 512 MiB, below everything a 32-bit kernel can map directly
+    const u32 ram_end = RAM_BASE + (u32)std::min<u64>(sim.mem, 512 << 20);
+    const u32 bios_start = RAM_BASE;
+    const u32 kernel_start = bios ? RAM_BASE + 0x400000 : RAM_BASE;
+    const u32 DTB_MAX = 0x10000; // the generated tree is ~250 bytes per hart, so 64 KiB is plenty
+    const u32 dtb_start = ram_end - DTB_MAX;
+    u32 used_end = RAM_BASE; // end of what is loaded so far, to catch overlaps
 
-    u32 bios_start = 0x80000000;
-    u32 kernel_start = bios ? 0x80400000 : 0x80000000; // without bios, kernel runs directly in m mode
-    u32 initrd_start = 0x86000000;
-    u32 dtb_start = 0x87000000;
-    u32 initrd_end = 0;
+    auto load = [&](const char* what, const std::vector<u8>& f, u32 start, u32 reserve) {
+        // reserve: the bytes the image takes once running (a kernel's bss), at least its file size
+        u64 end = (u64)start + std::max<u64>(f.size(), reserve);
+        if (start < used_end || end > dtb_start) {
+            char s[160];
+            snprintf(s, sizeof(s), "%s does not fit: 0x%08x..0x%08llx overlaps another image or the device tree at "
+                     "0x%08x (use -m for more RAM)", what, start, (unsigned long long)end, dtb_start);
+            runtime_error(s);
+        }
+        if (!bus.store(start, f.size(), f.data())) {
+            runtime_error(std::string("could not write ") + what + " to ram");
+        }
+        used_end = end;
+    };
 
     if (bios) {
-        auto f = load_file(bios);
-
-        bool ret = mmap.store(bios_start, f.size(), (u8*)&f[0]);
-        if (ret == false) {
-            runtime_error("could not write bios to ram");
-        }
+        load("--bios", load_file(bios), bios_start, 0);
     }
 
     if (kernel) {
         auto f = load_file(kernel);
-
-        bool ret = mmap.store(kernel_start, f.size(), (u8*)&f[0]);
-        if (ret == false) {
-            runtime_error("could not write kernel to ram");
+        // a RISC-V Linux Image header has the size the kernel takes in memory, bss included (image_size at 16,
+        // magic "RSC\x05" at 0x38). Without it, assume the file size
+        u64 image_size = 0;
+        if (f.size() >= 0x40 && memcmp(&f[0x38], "RSC\x05", 4) == 0) {
+            memcpy(&image_size, &f[16], 8);
         }
+        load("--kernel", f, kernel_start, (u32)std::min<u64>(image_size, 1u << 31));
     }
 
+    u32 initrd_start = 0;
+    u32 initrd_end = 0;
     if (initrd) {
         if (!kernel) {
-            runtime_error("enabled initrd without kernel");
+            runtime_error("--initrd needs --kernel");
         }
         auto f = load_file(initrd);
-
-        bool ret = mmap.store(initrd_start, f.size(), (u8*)&f[0]);
-        if (ret == false) {
-            runtime_error("could not write initrd to ram");
+        if (f.size() > dtb_start - used_end) {
+            runtime_error("--initrd does not fit between the kernel and the device tree (use -m for more RAM)");
         }
+        initrd_start = (dtb_start - f.size()) & ~0xfffu; // right below the device tree, page aligned
+        load("--initrd", f, initrd_start, 0);
         initrd_end = initrd_start + f.size();
     }
 
-    if (dtb) {
-        if (!kernel && !bios) {
-            runtime_error("enabled dtb without kernel or bios");
-        }
-        auto f = load_file(dtb);
-
-        std::string bootargs;
-        if (append) {
-            bootargs = append;
-        }
-        if (!initrd) {
-            initrd_start = 0;
-            initrd_end = 0;
-        }
-        patch_fdt(f, initrd_start, initrd_end, bootargs, sim.harts);
-        if (sim.dump_dtb) {
-            FILE* out = fopen(sim.dump_dtb, "wb");
-            if (!out || fwrite(f.data(), 1, f.size(), out) != f.size()) {
-                runtime_error("could not write --dump-dtb file");
-            }
-            fclose(out);
-        }
-        bool ret = mmap.store(dtb_start, f.size(), (u8*)&f[0]);
-
-        if (ret == false) {
-            runtime_error("could not write dtb to ram");
-        }
+    fdt_chosen chosen;
+    chosen.bootargs = "console=ttyS0 earlycon";
+    if (append) {
+        chosen.bootargs += std::string(" ") + append;
     }
+    chosen.stdout_path = "/soc/" + uart0.fdt_node_name(UART_BASE);
+    chosen.initrd_start = initrd_start;
+    chosen.initrd_end = initrd_end;
+
+    std::vector<u8> dtb = fdt_generate(bus, harts, chosen);
+    if (dtb.size() > DTB_MAX) {
+        runtime_error("generated device tree is larger than its 64 KiB slot");
+    }
+    if (sim.dump_dtb) {
+        FILE* out = fopen(sim.dump_dtb, "wb");
+        if (!out || fwrite(dtb.data(), 1, dtb.size(), out) != dtb.size()) {
+            runtime_error("could not write --dump-dtb file");
+        }
+        fclose(out);
+    }
+    if (sim.dump_dts) {
+        std::string dts = fdt_to_dts(dtb.data());
+        FILE* out = fopen(sim.dump_dts, "w");
+        if (!out || fwrite(dts.data(), 1, dts.size(), out) != dts.size()) {
+            runtime_error("could not write --dump-dts file");
+        }
+        fclose(out);
+    }
+    if (!bios && !kernel) {
+        if (sim.dump_dtb || sim.dump_dts) {
+            return 0; // only the device tree was asked for
+        }
+        runtime_error("nothing to run: give --bios and/or --kernel (see --help)");
+    }
+    if (!bus.store(dtb_start, dtb.size(), dtb.data())) {
+        runtime_error("could not write the device tree to ram");
+    }
+
+    uart0.attach_terminal();
 
     // every hart starts at the reset pc with a0 = hartid, a1 = dtb. OpenSBI picks the boot hart by lottery and
     // parks the others in WFI until the kernel starts them (SBI HSM, an MSIP IPI)
@@ -485,7 +410,7 @@ int main(int argc, char** argv)
 
     signal(SIGUSR1, on_sigusr1);
 
-    host_io io(&mmap);
+    host_io io(&bus);
 
     u64 instret = 0; // steps, including the ones that trapped
     auto t0 = std::chrono::steady_clock::now();
@@ -538,8 +463,8 @@ int main(int argc, char** argv)
 
         while (!stop.load(std::memory_order_relaxed) && !stop_requested) {
             io.wait_until_event();
-            std::lock_guard<std::mutex> lock(mmap.lock);
-            mmap.tick();
+            std::lock_guard<std::mutex> lock(bus.lock);
+            bus.tick();
         }
 
         stop = true;
@@ -579,8 +504,8 @@ int main(int argc, char** argv)
                 }
 
                 {
-                    std::lock_guard<std::mutex> lock(mmap.lock);
-                    mmap.tick();
+                    std::lock_guard<std::mutex> lock(bus.lock);
+                    bus.tick();
                 }
                 wake_ready();
 
@@ -592,8 +517,8 @@ int main(int argc, char** argv)
             if (all_waiting) {
                 io.wait_until_event(); // every hart is parked in WFI: sleep until host input or a device deadline
                 {
-                    std::lock_guard<std::mutex> lock(mmap.lock);
-                    mmap.tick();
+                    std::lock_guard<std::mutex> lock(bus.lock);
+                    bus.tick();
                 }
                 wake_ready();
             }
@@ -643,4 +568,16 @@ int main(int argc, char** argv)
     fprintf(stderr, "\n");
 
     return 0;
+}
+
+int main(int argc, char** argv)
+{
+    // setup errors (bad options, images that don't fit, missing files) end here with a message, not an abort.
+    // The UART's destructor has restored the terminal by then
+    try {
+        return run(argc, argv);
+    } catch (const std::exception& e) {
+        fprintf(stderr, "%s: %s\n", argv[0], e.what());
+        return 1;
+    }
 }

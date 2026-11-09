@@ -1,4 +1,5 @@
 #include "uart.h"
+#include "devicetree.h"
 
 #include <fcntl.h>
 #include <stdexcept>
@@ -68,7 +69,14 @@ uart::uart(const char* tty, ::plic* plic, u32 interrupt_id)
     scr = 0;
     dll = 0;
     dlm = 0;
+    this->tty = tty;
+    fd = -1;
 
+    update_interrupt();
+}
+
+void uart::attach_terminal()
+{
     if (tty) {
         custom_tty = true;
         fd = open(tty, O_RDWR | O_NOCTTY);
@@ -91,12 +99,13 @@ uart::uart(const char* tty, ::plic* plic, u32 interrupt_id)
             runtime_error("UART initialization failed");
         }
     }
-
-    update_interrupt();
 }
 
 uart::~uart()
 {
+    if (fd < 0) {
+        return; // never attached
+    }
     if (custom_tty) {
         close(fd);
     } else {
@@ -298,6 +307,20 @@ bool uart::store(u32 addr, u32 len, const u8* data)
     }
 
     return true;
+}
+
+std::string uart::fdt_node_name(u32 base) const
+{
+    return fdt_unit_name("serial", base);
+}
+
+void uart::fdt_props(fdt_builder& b, u32 base) const
+{
+    b.prop_string("compatible", "ns16550a");
+    b.prop_cells("reg", {base, (u32)size()});
+    // the divisor latch is only stored, the line speed isn't modelled. Linux needs a clock to compute divisors
+    b.prop_u32("clock-frequency", 10000000);
+    b.prop_cells("interrupts-extended", {b.phandle(plic_), interrupt_id});
 }
 
 u64 uart::size() const

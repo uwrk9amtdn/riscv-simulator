@@ -3,9 +3,11 @@
 #include "common.h"
 
 #include <atomic>
+#include <string>
 #include <vector>
 
 class mmio_device;
+class fdt_builder;
 
 // a host file descriptor a device wants to be woken by, and the device that reads it
 struct host_fd {
@@ -27,6 +29,12 @@ public:
     virtual void host_fds(std::vector<host_fd>& out) { (void)out; }
     // one of the device's fds is readable: take what it can, never block
     virtual void poll_input() {}
+
+    // device tree: the node name of the device mapped at base ("" for no node, the guest doesn't see it), and its
+    // properties. Nodes go under /soc unless fdt_at_root() (memory). See devicetree.h
+    virtual std::string fdt_node_name(u32 base) const { (void)base; return ""; }
+    virtual void fdt_props(fdt_builder& b, u32 base) const { (void)b; (void)base; }
+    virtual bool fdt_at_root() const { return false; }
 
     // a device calls this when its next_deadline_ns() may have moved earlier or its host_fds() changed
     // (e.g. a CLINT mtimecmp write, a UART RBR read). With threads, the I/O thread may be asleep with an old

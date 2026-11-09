@@ -110,7 +110,7 @@ before (0.12-0.17 s). Wake latency is 3-7 ms in both. A 3000-byte paste into `wc
 **Status.** SMP Linux boots and runs on 2 and 4 harts (`smp: Brought up 1 node, 4 CPUs`). Parallel work
 gives correct results, and every hart runs guest code. What differs from the steps below:
 
-- **Device tree: generated, not hand-written.** `patch_fdt()` (main.cpp, `fdt_set_harts()`) rebuilds `/cpus`
+- **Device tree: generated, not hand-written.** (Later replaced: `src/devicetree.cpp` now generates the whole tree from the harts and the bus; `soc.dts`, `--dtb` and `patch_fdt()` are gone.) `patch_fdt()` (main.cpp, `fdt_set_harts()`) rebuilds `/cpus`
   from the `cpu@0` template in `soc.dts`: `reg = i`, a new phandle for each hart's interrupt controller
   (after the existing maximum). It also rewrites `interrupts-extended` of the CLINT (`<&intcN 3 &intcN 7>`) and the
   PLIC (`<&intcN 11 &intcN 9>`) for every hart. libfdt inserts new nodes before the existing children, so
@@ -164,7 +164,7 @@ benchmark baselines don't change):
 
 ```
 build/rvsim --bios images/s-mode-smp/fw_jump.bin --kernel images/s-mode-smp/Image \
-    --initrd images/s-mode/rootfs.cpio --dtb build/soc.dtb --harts 4
+    --initrd images/s-mode/rootfs.cpio --harts 4
 ```
 
 

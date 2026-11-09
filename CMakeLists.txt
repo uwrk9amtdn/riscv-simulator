@@ -9,6 +9,7 @@ endif()
 add_executable(rvsim
     src/main.cpp
     src/mmio.cpp
+    src/devicetree.cpp
     src/host_io.cpp
     src/hart/hart.cpp
     src/hart/csr.cpp
@@ -41,16 +42,7 @@ endif()
 
 target_include_directories(rvsim PRIVATE src/hart/ src/devices/ src/)
 
-add_custom_command(
-    OUTPUT soc.dtb
-    COMMAND dtc ARGS -o soc.dtb ${CMAKE_CURRENT_SOURCE_DIR}/soc.dts
-    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/soc.dts
-)
-
-add_custom_target(generate_soc_dtb DEPENDS soc.dtb)
-
-add_dependencies(rvsim generate_soc_dtb)
-
+# the device tree is generated at run time from the machine (src/devicetree.cpp); libfdt writes it
 find_library(FDT_LIB fdt)
 
 if (NOT FDT_LIB)

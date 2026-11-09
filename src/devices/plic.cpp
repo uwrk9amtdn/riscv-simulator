@@ -1,4 +1,5 @@
 #include "plic.h"
+#include "devicetree.h"
 
 #define PRIORITY_BASE 0x00000000
 #define PENDING_BASE  0x00001000
@@ -235,4 +236,25 @@ void plic::update_context()
             c.hcontext->set_external_interrupt(0);
         }
     }
+}
+
+std::string plic::fdt_node_name(u32 base) const
+{
+    return fdt_unit_name("plic", base);
+}
+
+void plic::fdt_props(fdt_builder& b, u32 base) const
+{
+    b.prop_string("compatible", "riscv,plic0");
+    b.prop_cells("reg", {base, (u32)size()});
+    b.prop_u32("#address-cells", 0);
+    b.prop_u32("#interrupt-cells", 1);
+    b.prop_empty("interrupt-controller");
+    std::vector<u32> irqs; // in context order (m0, s0, m1, s1, ...): the context number is the position here
+    for (auto& c : context) {
+        irqs.insert(irqs.end(), {b.phandle(c.hcontext->get_hart()), c.hcontext->line()});
+    }
+    b.prop_cells("interrupts-extended", irqs);
+    b.prop_u32("riscv,ndev", num_ids - 1);
+    b.prop_u32("phandle", b.phandle(this));
 }

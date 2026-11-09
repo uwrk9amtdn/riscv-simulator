@@ -46,13 +46,12 @@ BAD = [b"Oops", b"Kernel panic", b"Segmentation fault", b"Illegal instruction", 
 
 def run_once(rvsim, kind, entries, ways, workload=WORKLOAD, marker=MARKER, timeout=300):
     master, slave = pty.openpty()
-    dtb = os.path.join(ROOT, "build", "soc.dtb")
     if kind == "mmode":  # NOMMU kernel in M-mode, no translation; skip the password login
         cmd = [rvsim, "--kernel", f"{IMG_M}/Image", "--initrd", f"{IMG_M}/rootfs.cpio.gz",
-               "--dtb", dtb, "--append", "rdinit=/bin/sh"]  # no translation in M-mode, the TLB is unused
+               "--append", "rdinit=/bin/sh"]  # no translation in M-mode, the TLB is unused
     else:
         cmd = [rvsim, "--bios", f"{IMG}/fw_jump.bin", "--kernel", f"{IMG}/Image",
-               "--initrd", f"{IMG}/rootfs.cpio", "--dtb", dtb,
+               "--initrd", f"{IMG}/rootfs.cpio",
                f"--tlb={kind}", f"--tlb-entries={max(entries, 1)}", f"--tlb-ways={max(ways, 1)}"]
     p = subprocess.Popen(cmd, stdin=slave, stdout=slave, stderr=subprocess.PIPE)
     os.close(slave)

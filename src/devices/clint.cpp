@@ -1,11 +1,12 @@
 #include "clint.h"
+#include "devicetree.h"
 #include <stdexcept>
 
 #define MSIP_BASE     0x0000
 #define MTIMECMP_BASE 0x4000
 #define MTIME_BASE    0xbff8
 
-#define NS_PER_MTIME 100 // mtime runs at 10 MHz (timebase-frequency in the dts)
+#define NS_PER_MTIME (1000000000 / TIMEBASE_HZ)
 
 clint::clint(std::vector<hart*> harts)
 {
@@ -260,6 +261,22 @@ void clint::tick()
             harts[i]->set_mtip(0);
         }
     }
+}
+
+std::string clint::fdt_node_name(u32 base) const
+{
+    return fdt_unit_name("clint", base);
+}
+
+void clint::fdt_props(fdt_builder& b, u32 base) const
+{
+    b.prop_string("compatible", "riscv,clint0");
+    b.prop_cells("reg", {base, (u32)size()});
+    std::vector<u32> irqs; // hart i: MSIP (3) and MTIP (7) of its interrupt controller, in hart order
+    for (hart* h : harts) {
+        irqs.insert(irqs.end(), {b.phandle(h), 3, b.phandle(h), 7});
+    }
+    b.prop_cells("interrupts-extended", irqs);
 }
 
 clint::~clint()

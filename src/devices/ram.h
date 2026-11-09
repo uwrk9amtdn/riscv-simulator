@@ -1,7 +1,6 @@
 #pragma once
 
 #include "mmio_device.h"
-#include <memory>
 
 class ram : public mmio_device {
     public:
@@ -10,10 +9,13 @@ class ram : public mmio_device {
         bool store(u32 addr, u32 len, const u8* data) override;
         u64 size() const override;
         // backing buffer, so a hart can access RAM directly without the virtual bus call
-        u8* host_ptr() { return data.get(); }
+        u8* host_ptr() { return data; }
         void tick() override;
+        std::string fdt_node_name(u32 base) const override;
+        void fdt_props(fdt_builder& b, u32 base) const override;
+        bool fdt_at_root() const override { return true; }
         ~ram() override;
     private:
         u32 size_;
-        std::unique_ptr<u8[]> data;
+        u8* data; // anonymous mapping: zero pages, committed only when the guest touches them
 };

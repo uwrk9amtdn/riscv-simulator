@@ -5,42 +5,32 @@
 #include "mmio_device.h"
 #include "hart.h"
 
+// a PLIC context: one interrupt line of one hart
 class hart_context {
 public:
+    explicit hart_context(hart* h) : h(h) {}
     virtual ~hart_context() = default;
     virtual void set_external_interrupt(bool level) = 0;
+    // the line in the hart's interrupt controller, for interrupts-extended in the device tree: MEIP 11, SEIP 9
+    virtual u32 line() const = 0;
+    hart* get_hart() const { return h; }
+
+protected:
+    hart* h;
 };
 
 class m_context : public hart_context {
 public:
-    m_context(hart* h)
-    {
-        this->h = h;
-    }
-    void set_external_interrupt(bool level) override
-    {
-        h->set_meip(level);
-    }
-    ~m_context() override { }
-
-private:
-    hart* h;
+    using hart_context::hart_context;
+    void set_external_interrupt(bool level) override { h->set_meip(level); }
+    u32 line() const override { return 11; }
 };
 
 class s_context : public hart_context {
 public:
-    s_context(hart* h)
-    {
-        this->h = h;
-    }
-    void set_external_interrupt(bool level) override
-    {
-        h->set_seip(level);
-    }
-    ~s_context() override { }
-
-private:
-    hart* h;
+    using hart_context::hart_context;
+    void set_external_interrupt(bool level) override { h->set_seip(level); }
+    u32 line() const override { return 9; }
 };
 
 class plic : public mmio_device {
@@ -52,6 +42,8 @@ public:
     bool store(u32 addr, u32 len, const u8* data) override;
     u64 size() const override;
     void tick() override;
+    std::string fdt_node_name(u32 base) const override;
+    void fdt_props(fdt_builder& b, u32 base) const override; // phandle: b.phandle(this)
     ~plic() override;
 
     void set_interrupt_signal(u32 id, bool level);

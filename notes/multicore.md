@@ -41,7 +41,7 @@ The design is single-threaded. WFI never blocks inside `hart::step()`. It only s
 - `mmio::next_deadline_ns()` returns the minimum over all devices in its slots. Because `mmio` is a device too, the nested `prpl` bus works without extra code.
 
 **`src/devices/clint.{h,cpp}`**
-- `mtime` is no longer stored. `mtime_now()` computes it as `(host_now_ns() - time0_ns) / 100 + mtime_offset`, which is 10 MHz and matches `timebase-frequency` in `soc.dts`.
+- `mtime` is no longer stored. `mtime_now()` computes it as `(host_now_ns() - time0_ns) / 100 + mtime_offset`, which is 10 MHz (`clint::TIMEBASE_HZ`, also `timebase-frequency` in the generated device tree).
 - When the guest writes `mtime` (either half, or all 64 bits), the change is stored as `mtime_offset += new - current`, so guest time keeps running from the written value.
 - `next_deadline_ns()` returns, for each hart whose `mtimecmp` is still in the future, `now + (mtimecmp - mtime) * 100 ns`. It skips harts that already have an interrupt pending. It also skips deltas above 2^50. That covers `mtimecmp = -1` (meaning "never") and stops the multiplication from overflowing.
 - `tick()` reads the clock again and updates MTIP. MTIP is also updated when `mtimecmp` is written.
@@ -125,7 +125,7 @@ So "cache coherency" for this project mostly means: keep simulator caches per ha
 These are the places that need to change for N harts, in no particular order:
 
 - `main.cpp` hardcodes `hart_0`, one `m_context`/`s_context` pair, `clint0({&hart_0})` and `regs[10] = 0`. **`a0` must be `mhartid` for each hart.** OpenSBI reads it and picks a boot hart with its lottery. The other harts wait in WFI for an SBI HSM start, which makes MSIP wake-up from WFI necessary for SMP to work.
-- `soc.dts` has one `cpu@0`. CLINT `interrupts-extended` lists only CPU0 (MSIP, MTIP), and the PLIC lists one M and one S context. You need N cpu nodes, CLINT entries for each hart, and 2N PLIC contexts. That is a good reason to generate the dtb from the machine description, as the TODO in `main.cpp` says.
+- `soc.dts` has one `cpu@0`. CLINT `interrupts-extended` lists only CPU0 (MSIP, MTIP), and the PLIC lists one M and one S context. You need N cpu nodes, CLINT entries for each hart, and 2N PLIC contexts. That is a good reason to generate the dtb from the machine description, as the TODO in `main.cpp` said. (Done: `src/devicetree.cpp` generates it from the harts and the bus; `soc.dts` and `--dtb` are gone.)
 - The PLIC already takes a context vector and the CLINT already takes a hart vector, so their register layouts should scale. Check that the PLIC address decoding handles context strides past context 1.
 - OpenSBI and Linux need to be built for SMP: `CONFIG_SMP`, `NR_CPUS`, and an OpenSBI platform with a large enough hart count. The FDT platform reads it from the dts.
 - AMOs are implemented as `load` then `store`, LR/SC keeps a private `reservation_set`, `fence` and `fence.i` are nops, and the walker updates PTEs non-atomically. All of this is correct for one hart only.

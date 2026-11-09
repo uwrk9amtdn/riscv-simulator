@@ -26,8 +26,7 @@ BAD = [b"Oops", b"Kernel panic", b"Segmentation fault", b"Illegal instruction", 
 class Sim:
     def __init__(self, rvsim, extra):
         self.master, slave = pty.openpty()
-        cmd = [rvsim, "--bios", f"{IMG}/fw_jump.bin", "--kernel", f"{IMG}/Image", "--initrd", ROOTFS,
-               "--dtb", os.path.join(ROOT, "build", "soc.dtb")] + extra
+        cmd = [rvsim, "--bios", f"{IMG}/fw_jump.bin", "--kernel", f"{IMG}/Image", "--initrd", ROOTFS] + extra
         self.p = subprocess.Popen(cmd, stdin=slave, stdout=slave, stderr=subprocess.PIPE)
         os.close(slave)
         self.out = b""

@@ -314,15 +314,22 @@ loop + md5 of 8 MiB zeros + md5 of busybox) correct in both modes, 4.8 s with th
 **Timer drift / lost wakeups (done, 60 s):** 60 x `sleep 1` in the guest, 4 harts: guest 60 s, host wall 60.7 s
 (round-robin) and 60.8 s (`--threads`), no hang.
 
+**1-hart round-robin A/B (done):** `bench_tlb.py --only dm64`, 5 interleaved runs each, HEAD (be1f36d) against
+6b131d6: 658.7M vs 671.6M instructions (OpenSBI's time emulation is gone), median 3.291 vs 3.568 s CPU, 200.2 vs
+188.3 MIPS. No regression from the `main()` restructuring; ~8% less CPU for the same workload.
+
+**ThreadSanitizer after the kick/time changes (done):** TSan build (`-fsanitize=thread -g -O1`, no LTO), 4 threaded
+harts: boot, 3 s idle (timer kicks and the armed deadline), 4 parallel jobs (loop + md5 of 1 MiB of zeros, all
+correct), 3 x `sleep 1`. No reports; TSan and its `log_path` were checked with a racy test program.
+
 **Next steps (where to continue):**
 
-1. Re-check 1-hart round-robin speed after the `--threads` restructuring of `main()` and the `time` CSR (a
-   short A/B against 6b131d6).
-2. Repeat the IPI-heavy workloads (fork-heavy scripts, TLB shootdowns via SBI RFENCE) in both modes and
-   compare. The stress workload above covers part of this. Rerun ThreadSanitizer once (new shared state:
-   `armed_deadline_ns`, `clint::mtime_offset`, both atomics).
-3. Longer timer drift run (several minutes).
-4. Then: update `multicore.md` 3.5 and the README, and decide whether threads become the default (phase 5).
+1. Repeat the IPI-heavy workloads (fork-heavy scripts, TLB shootdowns via SBI RFENCE) in both modes and
+   compare. The stress workload above covers part of this.
+2. Longer timer drift run (several minutes).
+3. Then: update `multicore.md` 3.5 and the README, and decide whether threads become the default (phase 5).
+4. Optional, both modes: interrupts and ecalls are still delivered as C++ exceptions (~4 per hart per guest
+   tick); taking interrupts without a throw would cut idle CPU further.
 
 Test driver: `notes/smp_test.py` (`idle`, `sleep`, `run --cmd`; extra options go to rvsim).
 

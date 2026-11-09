@@ -146,11 +146,13 @@ bool clint::store(u32 addr, u32 len, const u8* data)
             }
 
             if (mtimecmp[hart_id] <= mtime_now()) {
-                harts[hart_id]->set_mtip(1);
+                harts[hart_id]->set_mtip(1); // wakes the hart itself, the I/O thread has nothing to do
             } else {
                 harts[hart_id]->set_mtip(0);
+                // RV32 OpenSBI writes mtimecmp as hi = -1, lo, hi: only a deadline earlier than the I/O thread's
+                // current one needs a kick
+                notify_deadline(timer_deadline_ns(hart_id, host_now_ns()));
             }
-            notify_host_changed(); // the next timer deadline may be earlier now
         }
 
         return true;
@@ -207,24 +209,41 @@ u64 clint::mtime_now() const
     return (host_now_ns() - time0_ns) / NS_PER_MTIME + mtime_offset.load(std::memory_order_relaxed);
 }
 
+// host time at which hart i's timer fires, NO_DEADLINE if it is already pending or effectively never
+u64 clint::timer_deadline_ns(u32 i, u64 now_ns) const
+{
+    u64 mtime = (now_ns - time0_ns) / NS_PER_MTIME + mtime_offset.load(std::memory_order_relaxed);
+    if (mtimecmp[i] <= mtime) {
+        return NO_DEADLINE; // already pending, nothing changes by itself
+    }
+    u64 delta = mtimecmp[i] - mtime;
+    if (delta > ((u64)1 << 50)) {
+        return NO_DEADLINE; // effectively never (e.g. mtimecmp = -1). Also keeps the multiplication from overflowing
+    }
+    return now_ns + delta * NS_PER_MTIME;
+}
+
 u64 clint::next_deadline_ns()
 {
     u64 now_ns = host_now_ns();
-    u64 mtime = (now_ns - time0_ns) / NS_PER_MTIME + mtime_offset.load(std::memory_order_relaxed);
     u64 deadline = NO_DEADLINE;
 
     for (u32 i = 0; i < harts.size(); i++) {
-        if (mtimecmp[i] <= mtime) {
-            continue; // already pending, nothing changes by itself
-        }
-        u64 delta = mtimecmp[i] - mtime;
-        if (delta > ((u64)1 << 50)) {
-            continue; // effectively never (e.g. mtimecmp = -1). Also keeps the multiplication from overflowing
-        }
-        u64 d = now_ns + delta * NS_PER_MTIME;
+        u64 d = timer_deadline_ns(i, now_ns);
         if (d < deadline) {
             deadline = d;
         }
+    }
+    // wake at the last deadline within the slack after the first, and fire them all in one tick
+    if (deadline != NO_DEADLINE) {
+        u64 last = deadline;
+        for (u32 i = 0; i < harts.size(); i++) {
+            u64 d = timer_deadline_ns(i, now_ns);
+            if (d != NO_DEADLINE && d > last && d <= deadline + DEADLINE_SLACK_NS) {
+                last = d;
+            }
+        }
+        deadline = last;
     }
 
     return deadline;

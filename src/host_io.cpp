@@ -1,5 +1,7 @@
 #include "host_io.h"
 
+#include <algorithm>
+
 #include <sys/eventfd.h>
 #include <unistd.h>
 
@@ -34,6 +36,8 @@ void host_io::kick()
     [[maybe_unused]] ssize_t r = write(kick_fd, &one, sizeof(one)); // only fails if the counter is full, then a wake is pending anyway
 }
 
+static constexpr u64 MAX_SLEEP_NS = 1000000000ull; // see wait_until_event
+
 void host_io::wait_until_event()
 {
     u64 deadline;
@@ -41,7 +45,10 @@ void host_io::wait_until_event()
         std::lock_guard<std::mutex> lock(root->lock);
         fds.clear();
         root->host_fds(fds);
-        deadline = root->next_deadline_ns();
+        // sleep at most MAX_SLEEP_NS: the armed deadline is then never far away, so the transient far values of a
+        // 32-bit split mtimecmp write (hi or lo still old, ~429 s away) don't kick. Costs one wake per second idle
+        deadline = std::min(root->next_deadline_ns(), host_now_ns() + MAX_SLEEP_NS);
+        mmio_device::armed_deadline_ns.store(deadline, std::memory_order_relaxed); // devices kick only if earlier
     }
 
     pfds.resize(fds.size() + 1);
@@ -64,7 +71,10 @@ void host_io::wait_until_event()
         timeout = &ts;
     }
 
-    if (ppoll(pfds.data(), pfds.size(), timeout, ppoll_mask) > 0) {
+    int n = ppoll(pfds.data(), pfds.size(), timeout, ppoll_mask);
+    // awake: the next call recomputes the deadline under the lock and sees every change made from now on
+    mmio_device::armed_deadline_ns.store(0, std::memory_order_relaxed);
+    if (n > 0) {
         if (pfds[fds.size()].revents) {
             u64 count;
             [[maybe_unused]] ssize_t r = read(kick_fd, &count, sizeof(count));

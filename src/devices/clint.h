@@ -27,5 +27,7 @@ private:
     u64 time0_ns;         // host time at power on
     std::atomic<u64> mtime_offset{0}; // guest writes to mtime are kept as an offset from the host clock
 
+    u64 timer_deadline_ns(u32 i, u64 now_ns) const;
+
     std::vector<hart*> harts;
 };

@@ -7,9 +7,10 @@ modes:
   run    type --cmd at the prompt and wait for it to finish; print wall time and the console output
 
 examples:
-  smp_test.py idle --harts 4 --threads
+  smp_test.py idle --harts 4                  (threads, the default)
+  smp_test.py idle --harts 4 --round-robin
   smp_test.py sleep --count 60 --harts 4
-  smp_test.py run --cmd 'cat /proc/cpuinfo | grep -c hart' -- --harts 4 --threads
+  smp_test.py run --cmd 'cat /proc/cpuinfo | grep -c hart' -- --harts 4
 Options after `--` (and unknown ones) are passed to rvsim unchanged.
 """
 import argparse, os, pty, re, select, signal, subprocess, sys, time

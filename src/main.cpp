@@ -209,7 +209,7 @@ struct sim_options {
     u64 max_instr = 0; // 0: run forever
     u32 harts = 1;
     u32 quantum = 1000; // instructions a hart runs before the devices tick and the next hart runs
-    bool threads = false; // one host thread per hart plus the I/O thread, instead of round-robin
+    bool threads = true; // one host thread per hart plus the I/O thread; false: all harts round-robin in one thread
     const char* dump_dtb = nullptr; // write the final (patched) dtb here
 };
 
@@ -228,8 +228,10 @@ static void print_usage(FILE* out, const char* prog)
         "\n"
         "harts:\n"
         "  --harts N            number of harts, 1..64 (default 1; N > 1 needs --bios)\n"
-        "  --threads            run each hart in its own host thread (default: round-robin in one thread)\n"
-        "  --quantum N          instructions per hart per round-robin turn / run slice (default 1000)\n"
+        "  --threads            run each hart in its own host thread, plus an I/O thread (the default)\n"
+        "  --round-robin        run all harts in one host thread, one quantum each in turn: slower with more\n"
+        "                       than one hart, but uses less host CPU while the guest is idle\n"
+        "  --quantum N          instructions per hart per run slice / round-robin turn (default 1000)\n"
         "\n"
         "tlb:\n"
         "  --tlb KIND           off, null, dm, sa or fa (default dm)\n"
@@ -241,7 +243,7 @@ static void print_usage(FILE* out, const char* prog)
         "  --help               show this help\n"
         "\n"
         "example (4 harts, SMP Linux):\n"
-        "  %s --bios fw_jump.bin --kernel Image --initrd rootfs.cpio --dtb soc.dtb --harts 4 --threads\n",
+        "  %s --bios fw_jump.bin --kernel Image --initrd rootfs.cpio --dtb soc.dtb --harts 4\n",
         prog, prog);
 }
 
@@ -261,6 +263,7 @@ void parse_cmdline(int argc, char* const* argv, const char** bios, const char** 
         {"dump-dtb", required_argument, 0, 10},
         {"quantum", required_argument, 0, 11},
         {"threads", no_argument, 0, 12},
+        {"round-robin", no_argument, 0, 13},
         {"help", no_argument, 0, 'h'},
         {0, 0, 0, 0}
     };
@@ -309,6 +312,9 @@ void parse_cmdline(int argc, char* const* argv, const char** bios, const char** 
         case 12:
             sim->threads = true;
             break;
+        case 13:
+            sim->threads = false;
+            break;
         case 'h':
             print_usage(stdout, argv[0]);
             exit(0);
@@ -323,12 +329,12 @@ void parse_cmdline(int argc, char* const* argv, const char** bios, const char** 
         fprintf(stderr, "%s: unexpected argument '%s'", argv[0], argv[optind]);
         // getopt_long moves non-options to the end, so look for --threads anywhere: "--threads 4" is a likely mistake
         bool numeric = strspn(argv[optind], "0123456789") == strlen(argv[optind]);
-        bool has_threads = false;
+        bool has_mode = false;
         for (int i = 1; i < optind; i++) {
-            has_threads |= strcmp(argv[i], "--threads") == 0;
+            has_mode |= strcmp(argv[i], "--threads") == 0 || strcmp(argv[i], "--round-robin") == 0;
         }
-        if (numeric && has_threads) {
-            fprintf(stderr, " (--threads takes no value; use --harts N to set the hart count)");
+        if (numeric && has_mode) {
+            fprintf(stderr, " (--threads and --round-robin take no value; use --harts N to set the hart count)");
         }
         fprintf(stderr, "\n\n");
         print_usage(stderr, argv[0]);

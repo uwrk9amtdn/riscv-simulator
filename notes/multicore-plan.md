@@ -339,14 +339,18 @@ The IPI mix follows the guest's timing: in round-robin a woken reader's CPU is m
 pipe test queues ~9x more remote wakeups (function-call IPIs). Threads win by about the same factor as the
 CPU-bound scaling run (2.2x there at 4 harts, before the time CSR); IPI-heavy work doesn't hurt them.
 
+**Threads are the default (phase 5 decision):** `--threads` is now the default and still accepted; `--round-robin`
+selects the old loop. Checked in the threaded default: `bench_tlb.py --check`, the M-mode NOMMU boot (no `--bios`),
+`--max-instr`, a 4-hart boot with no mode option (4 CPUs). 1 hart, `bench_tlb.py --only dm64`, 3 interleaved runs:
+threads 3.170-3.324 s CPU (198-208 MIPS), round-robin 3.327-3.356 s (196-198 MIPS), the same. Idle cost of the
+default: 1 hart 4.0% of a core vs 2.5% round-robin, 4 harts ~18% vs ~9%.
+
 **Next steps (where to continue):**
 
-1. Phase 5: update `multicore.md` 3.5 and the README, and decide whether threads become the default. All the
-   phase 4 checks pass; the remaining cost of threads is idle CPU (~2x round-robin at 4 harts, see above).
-2. Optional, both modes: interrupts and ecalls are still delivered as C++ exceptions (~4 per hart per guest
+1. Optional, both modes: interrupts and ecalls are still delivered as C++ exceptions (~4 per hart per guest
    tick); taking interrupts without a throw would cut idle CPU further.
 
-Test driver: `notes/smp_test.py` (`idle`, `sleep`, `run --cmd`; extra options go to rvsim).
+Test driver: `notes/smp_test.py` (`idle`, `sleep`, `run --cmd`; extra options go to rvsim, e.g. `--round-robin`).
 
 
 Goal: `--threads` runs each hart in its own thread for real parallel speed. Requires items 1 and 2 of `multicore.md` 3.5.

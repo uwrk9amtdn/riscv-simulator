@@ -163,5 +163,5 @@ This is where the speedup comes from. Earlier measurements showed that the bus h
 2. A correct TLB (section 2). This is the biggest single-core speed gain.
 3. N harts round-robin (3.3): dts generation, `a0 = mhartid`, the PLIC/CLINT contexts, reservation clearing on switch, all-harts-waiting WFI. Boot SMP Linux and check `nproc`.
 4. A decoded-instruction cache per hart, flushed on `fence.i`, if profiling says it is worth it.
-5. Threads (3.4), keeping round-robin as a `--deterministic` option for debugging.
+5. Threads (3.4), keeping round-robin as an option. Done: threads are the default, `--round-robin` runs all harts in one thread (not deterministic, mtime follows the host clock, so not called `--deterministic`).
 6. Only then, if you want timing numbers, an optional cache and coherence *model*.

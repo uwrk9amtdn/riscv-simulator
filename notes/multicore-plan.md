@@ -286,25 +286,45 @@ are still open (see "Next steps").
   limit. Round-robin also scales a bit worse than N x (4 harts 183 s, not 157 s): switching between the
   harts' caches.
 
+**Idle CPU with threads (done):** 4 SMP harts at the shell prompt, host CPU over 10 s (`notes/smp_test.py idle`).
+At first `--threads` used 33% of a core against round-robin's ~10%. Counting wakeups and traps found three causes:
+
+1. Kicks: every 32-bit `mtimecmp` store kicked the I/O thread (an eventfd write), ~9 per guest timer
+   interrupt, 3600/s. Now `mmio_device::notify_deadline()` kicks only if the new deadline is earlier than the
+   one the I/O thread sleeps until (`armed_deadline_ns`, published under the device lock, 0 while awake). A due
+   `mtimecmp` doesn't kick at all (`set_mtip` wakes the hart). The I/O thread sleeps at most 1 s, so the
+   transient values of a split RV32 write (~429 s away, the other half still old) are never earlier than the
+   armed deadline.
+2. The guest's per-CPU ticks are aligned to the same jiffy but programmed a few us apart. A 100 us slack
+   (`DEADLINE_SLACK_NS`, in `clint::next_deadline_ns` and the kick test) fires them in one I/O wake-up. With
+   both: ~1 kick and ~2 I/O wake-ups per 10 ms tick period, down from ~9 and ~12.
+3. Not threads-specific: `time`/`timeh` weren't implemented, so each Linux clocksource read trapped to OpenSBI
+   (a C++ exception, the firmware's emulation, an MMIO load of mtime under the device lock), ~17 per hart tick,
+   ~7000/s idle; the unwinder alone was 15% of idle CPU. The CSRs now read the CLINT's mtime
+   (`hart::set_time_source`), gated by `mcounteren.TM` / `scounteren.TM`.
+
+Result, 4 harts, 10 s idle: round-robin 0.86-0.92 s CPU, `--threads` 1.67-1.90 s (was 3.3 s). The rest is
+inherent to threads: each guest CPU's 100 Hz tick wakes its own host thread (400 futex wake/sleep cycles/s, each
+~0.1 ms of host kernel time in this WSL2 VM, plus user time on a cold core); round-robin handles all four in one
+wake-up. Each hart tick still throws 4 traps (MTIP, STIP, 2 ecalls) as C++ exceptions.
+
+Checked after these changes: `bench_tlb.py --check` ok, M-mode NOMMU boot ok, 4-hart stress (4 parallel jobs of
+loop + md5 of 8 MiB zeros + md5 of busybox) correct in both modes, 4.8 s with threads vs 14.5 s round-robin.
+
+**Timer drift / lost wakeups (done, 60 s):** 60 x `sleep 1` in the guest, 4 harts: guest 60 s, host wall 60.7 s
+(round-robin) and 60.8 s (`--threads`), no hang.
+
 **Next steps (where to continue):**
 
-1. **Idle CPU with threads**: `idle_test.py`-style. Boot 4 SMP harts with `--threads` at the shell prompt
-   and measure host CPU over 5 s. It should be close to round-robin's 0.40 s (each guest CPU's 250 Hz tick).
-   This was started when the session stopped; no result yet.
-2. **Timer drift / lost wakeups**: in the guest,
-   `a=$(date +%s); for i in $(seq 60); do sleep 1; done; b=$(date +%s); echo $((b-a))`. Run with `--threads` and
-   round-robin (4 harts); expect ~60 s of host wall time and guest time, and no hang. The plan asks for
-   several minutes; 60 s first.
-3. Re-check 1-hart round-robin speed after the `--threads` restructuring of `main()` (a short A/B against
-   6b131d6). The round-robin loop moved into an `else` branch but is otherwise unchanged.
-4. Repeat the IPI-heavy workloads (fork-heavy scripts, TLB shootdowns via SBI RFENCE) in both modes and
-   compare. The stress workload above covers part of this.
-5. Then: update `multicore.md` 3.5 and the README, and decide whether threads become the default (phase 5).
+1. Re-check 1-hart round-robin speed after the `--threads` restructuring of `main()` and the `time` CSR (a
+   short A/B against 6b131d6).
+2. Repeat the IPI-heavy workloads (fork-heavy scripts, TLB shootdowns via SBI RFENCE) in both modes and
+   compare. The stress workload above covers part of this. Rerun ThreadSanitizer once (new shared state:
+   `armed_deadline_ns`, `clint::mtime_offset`, both atomics).
+3. Longer timer drift run (several minutes).
+4. Then: update `multicore.md` 3.5 and the README, and decide whether threads become the default (phase 5).
 
-Test scripts used (scratchpad, not committed): boot-and-run with arbitrary rvsim options and SIGUSR1
-stats (`smp_test.py`), the idle/wake/paste test (`idle_test.py`), scaling (`scale_test.py`). They are
-simple pty drivers along the lines of `notes/bench_tlb.py`. If needed, add a general version to
-`notes/` (e.g. `bench_tlb.py --kernel/--bios/--extra`).
+Test driver: `notes/smp_test.py` (`idle`, `sleep`, `run --cmd`; extra options go to rvsim).
 
 
 Goal: `--threads` runs each hart in its own thread for real parallel speed. Requires items 1 and 2 of `multicore.md` 3.5.
